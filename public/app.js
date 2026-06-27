@@ -12,15 +12,19 @@ const ago = (iso) => {
 
 let AGENTS = {};
 
-// ── Tabs ────────────────────────────────────────────────────────────────
-document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => {
+// ── Tabs (deep-linkable via #hash) ──────────────────────────────────────────
+function activateTab(view) {
+  const t = document.querySelector(`.tab[data-view="${view}"]`);
+  if (!t) return;
   document.querySelectorAll('.tab').forEach((x) => x.classList.remove('active'));
   document.querySelectorAll('.view').forEach((x) => x.classList.remove('active'));
   t.classList.add('active');
-  $('#view-' + t.dataset.view).classList.add('active');
-  if (t.dataset.view === 'messages') renderMessages();
-  if (t.dataset.view === 'memory') renderMemory($('#mem-search').value);
-}));
+  $('#view-' + view).classList.add('active');
+  if (view === 'messages') renderMessages();
+  if (view === 'memory') renderMemory($('#mem-search').value);
+  if (location.hash !== '#' + view) history.replaceState(null, '', '#' + view);
+}
+document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => activateTab(t.dataset.view)));
 
 // ── Renderers ───────────────────────────────────────────────────────────
 async function renderStats() {
@@ -138,5 +142,9 @@ function connect() {
 $('#mem-search').addEventListener('input', (e) => renderMemory(e.target.value));
 
 // boot
-(async () => { await renderAgents(); renderStats(); renderBoard(); renderActivity(); renderMemory(); connect(); })();
+(async () => {
+  await renderAgents(); renderStats(); renderBoard(); renderActivity(); renderMemory(); connect();
+  const initial = location.hash.replace('#', '');
+  if (initial && document.querySelector(`.tab[data-view="${initial}"]`)) activateTab(initial);
+})();
 setInterval(renderStats, 15000);  // keep "last seen" fresh

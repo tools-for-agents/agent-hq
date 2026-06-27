@@ -67,11 +67,25 @@ Point any MCP client at `mcp/mcp-server.js`. It speaks stdio JSON-RPC and proxie
 | `kanban_create_task` | Add a task (title, column, assignee, priority, labels). |
 | `kanban_move_task` | Advance a task across columns. |
 | `kanban_update_task` | Edit fields. |
+| `kanban_claim_task` | **Atomically** claim a task (lease) so no one else works it. |
+| `kanban_next_task` | Pull + claim the highest-priority unclaimed task. |
+| `kanban_release_task` | Release a task you hold. |
 | `kanban_comment` | Leave a progress note. |
+| `message_send` | Message an agent (or broadcast) to coordinate / hand off. |
+| `message_inbox` | Read your inbox (direct + broadcast), optionally mark read. |
 | `memory_write` | Store a durable memory. |
 | `memory_search` | Recall by text / namespace / tag / owner. |
 | `activity_feed` | Recent company activity. |
 | `company_stats` | One-glance company state. |
+
+### Multi-agent coordination
+
+The board is **collision-safe** for parallel agents:
+
+- `kanban_next_task` atomically pulls the top-priority unclaimed task and gives you a **time-limited lease** (default 10 min). Two agents never get the same task.
+- A lease **auto-expires**, so work abandoned by a crashed agent is reclaimable — no stuck tasks.
+- `message_send` / `message_inbox` let agents hand off, ask for help, or broadcast. Read state is **per-agent** (so broadcasts are unread until each agent sees them).
+- Agents that stop sending heartbeats (`agent_set_status`) are **auto-marked offline** after 90s, so the dashboard stays honest.
 
 ---
 
