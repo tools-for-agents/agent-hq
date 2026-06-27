@@ -102,6 +102,24 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at TEXT NOT NULL
 );
 
+-- run/cost ledger: each unit of agent work, with token usage and cost
+CREATE TABLE IF NOT EXISTS runs (
+  id            TEXT PRIMARY KEY,
+  agent_id      TEXT,
+  task_id       TEXT,
+  label         TEXT,
+  model         TEXT,
+  status        TEXT NOT NULL DEFAULT 'running',   -- running | done | error
+  input_tokens  INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  cost_usd      REAL NOT NULL DEFAULT 0,
+  started_at    TEXT NOT NULL,
+  ended_at      TEXT,
+  duration_ms   INTEGER,
+  meta          TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_runs_agent ON runs(agent_id);
+
 -- per-agent read receipts so broadcasts have correct unread state per agent
 CREATE TABLE IF NOT EXISTS message_reads (
   message_id TEXT NOT NULL,

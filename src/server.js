@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, extname, normalize } from 'node:path';
-import { Agents, Boards, Tasks, Memory, Messages, Activity, Stats } from './services.js';
+import { Agents, Boards, Tasks, Memory, Messages, Ledger, Activity, Stats } from './services.js';
 import { addClient } from './events.js';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -72,6 +72,13 @@ route('POST', '/api/tasks/next', (_p, body) => Tasks.next(body.agent, { board_id
 route('GET', '/api/messages', (_p, _b, q) => Messages.recent(q.limit ? +q.limit : 50));
 route('POST', '/api/messages', (_p, body) => Messages.send(body));
 route('GET', '/api/inbox', (_p, _b, q) => Messages.inbox({ agent: q.agent, unread_only: q.unread === '1', limit: q.limit ? +q.limit : 50, mark_read: q.mark_read === '1' }));
+
+// Run / cost ledger
+route('GET', '/api/runs', (_p, _b, q) => Ledger.list(q.limit ? +q.limit : 50));
+route('POST', '/api/runs', (_p, body) => Ledger.start(body));
+route('POST', '/api/runs/record', (_p, body) => Ledger.record(body));
+route('PATCH', '/api/runs/:id', (p, body) => Ledger.end(p.id, body));
+route('GET', '/api/ledger', () => Ledger.summary());
 
 // Memory
 route('GET', '/api/memory', (_p, _b, q) => Memory.search(q));

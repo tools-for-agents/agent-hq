@@ -22,6 +22,7 @@ function activateTab(view) {
   $('#view-' + view).classList.add('active');
   if (view === 'messages') renderMessages();
   if (view === 'memory') renderMemory($('#mem-search').value);
+  if (view === 'ledger') renderLedger();
   if (location.hash !== '#' + view) history.replaceState(null, '', '#' + view);
 }
 document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => activateTab(t.dataset.view)));
@@ -35,6 +36,7 @@ async function renderStats() {
     ['tasks', s.tasks, 'tasks'],
     ['memories', s.memories, 'memories'],
     ['messages', s.messages ?? 0, 'messages'],
+    ['spend', '$' + (s.cost_usd ?? 0).toFixed(2), 'spend'],
   ].map(([_, v, l]) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`).join('');
 }
 
@@ -61,6 +63,46 @@ function card(t) {
       ${labels}
     </div>
   </div>`;
+}
+
+const fmtTok = (n) => n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n || 0);
+const usd = (n) => '$' + (n || 0).toFixed(4);
+
+async function renderLedger() {
+  const l = await api('/ledger');
+  const runs = await api('/runs?limit=40');
+  const maxCost = Math.max(0.0001, ...l.by_agent.map((a) => a.cost_usd));
+  $('#ledger').innerHTML = `
+    <div class="ledger-totals">
+      <div class="lt"><b>$${(l.total_cost_usd || 0).toFixed(4)}</b><span>total spend</span></div>
+      <div class="lt"><b>${fmtTok(l.total_tokens)}</b><span>total tokens</span></div>
+      <div class="lt"><b>${fmtTok(l.total_input_tokens)}</b><span>input</span></div>
+      <div class="lt"><b>${fmtTok(l.total_output_tokens)}</b><span>output</span></div>
+      <div class="lt"><b>${l.total_runs}</b><span>runs</span></div>
+    </div>
+    <h3 class="lh">Spend by agent</h3>
+    <div class="ledger-agents">
+      ${l.by_agent.length ? l.by_agent.map((a) => `
+        <div class="la">
+          <div class="la-name">${a.avatar || '🤖'} ${esc(a.name || a.agent_id || 'unattributed')}</div>
+          <div class="bar"><div class="fill" style="width:${(a.cost_usd / maxCost * 100).toFixed(1)}%"></div></div>
+          <div class="la-fig">${usd(a.cost_usd)} · ${fmtTok(a.input_tokens + a.output_tokens)} tok · ${a.runs} runs</div>
+        </div>`).join('') : '<div class="empty">No runs recorded yet.</div>'}
+    </div>
+    <h3 class="lh">Recent runs</h3>
+    <div class="runs">
+      ${runs.length ? runs.map((r) => {
+        const ag = AGENTS[r.agent_id];
+        return `<div class="run">
+          <span class="r-status r-${esc(r.status)}">${r.status === 'running' ? '▶' : r.status === 'error' ? '✕' : '✓'}</span>
+          <span class="r-label">${esc(r.label || 'run')}</span>
+          <span class="r-agent">${ag ? ag.avatar + ' ' + esc(ag.name) : ''}</span>
+          <span class="r-model">${esc(r.model || '')}</span>
+          <span class="r-tok">${fmtTok((r.input_tokens || 0) + (r.output_tokens || 0))} tok</span>
+          <span class="r-cost">${usd(r.cost_usd)}</span>
+        </div>`;
+      }).join('') : '<div class="empty">—</div>'}
+    </div>`;
 }
 
 async function renderMessages() {
@@ -124,6 +166,7 @@ function refreshAll() {
     renderStats(); renderBoard(); renderActivity();
     if ($('#view-memory').classList.contains('active')) renderMemory($('#mem-search').value);
     if ($('#view-messages').classList.contains('active')) renderMessages();
+    if ($('#view-ledger').classList.contains('active')) renderLedger();
   }, 120);
 }
 

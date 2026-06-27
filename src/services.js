@@ -2,6 +2,7 @@
 // emits a live event so the dashboard updates in real time.
 import { get, all, run, uid, now, logActivity } from './db.js';
 import { broadcast } from './events.js';
+import { costOf, priceTable } from './pricing.js';
 
 function emit(activity) {
   if (activity) broadcast('activity', activity);
@@ -338,6 +339,80 @@ export const Messages = {
   recent: (limit = 50) => all(`SELECT * FROM messages ORDER BY created_at DESC LIMIT ?`, limit),
 };
 
+// ── Run / Cost ledger ────────────────────────────────────────────────────────
+// Tracks each unit of agent work with token usage and computed USD cost, so the
+// company's economics are observable. Prices come from src/pricing.js.
+export const Ledger = {
+  start({ agent_id = null, task_id = null, label = 'run', model = null, meta = null }) {
+    const id = uid('run_');
+    run(`INSERT INTO runs (id,agent_id,task_id,label,model,status,started_at,meta)
+         VALUES (?,?,?,?,?,'running',?,?)`,
+      id, agent_id, task_id, label, model, now(), meta ? JSON.stringify(meta) : null);
+    if (agent_id) {
+      const a = get(`SELECT * FROM agents WHERE id=?`, agent_id);
+      if (a) run(`UPDATE agents SET status='working', current_task=?, last_seen=?, updated_at=? WHERE id=?`,
+        label, now(), now(), agent_id);
+    }
+    emit(logActivity({ actor: agent_id, type: 'run.start', entity: 'run', entity_id: id,
+      summary: `▶️ run "${label}"${model ? ` (${model})` : ''}` }));
+    return get(`SELECT * FROM runs WHERE id=?`, id);
+  },
+
+  end(id, { input_tokens = 0, output_tokens = 0, status = 'done', cost_usd, model } = {}) {
+    const r = get(`SELECT * FROM runs WHERE id=?`, id);
+    if (!r) throw new Error('run not found');
+    const useModel = model || r.model;
+    const cost = cost_usd != null ? cost_usd : costOf(useModel, input_tokens, output_tokens);
+    const dur = Date.now() - new Date(r.started_at).getTime();
+    run(`UPDATE runs SET status=?, input_tokens=?, output_tokens=?, cost_usd=?, model=?, ended_at=?, duration_ms=? WHERE id=?`,
+      status, input_tokens, output_tokens, cost, useModel, now(), dur, id);
+    if (r.agent_id) run(`UPDATE agents SET status='idle', current_task=NULL, last_seen=?, updated_at=? WHERE id=?`,
+      now(), now(), r.agent_id);
+    emit(logActivity({ actor: r.agent_id, type: 'run.end', entity: 'run', entity_id: id,
+      summary: `⏹️ run "${r.label}" — ${input_tokens + output_tokens} tok, $${cost.toFixed(4)}` }));
+    return get(`SELECT * FROM runs WHERE id=?`, id);
+  },
+
+  // One-shot: log an already-completed run.
+  record({ agent_id = null, task_id = null, label = 'run', model = null,
+    input_tokens = 0, output_tokens = 0, cost_usd, duration_ms = 0, status = 'done', meta = null }) {
+    const id = uid('run_');
+    const cost = cost_usd != null ? cost_usd : costOf(model, input_tokens, output_tokens);
+    const ts = now();
+    run(`INSERT INTO runs (id,agent_id,task_id,label,model,status,input_tokens,output_tokens,cost_usd,started_at,ended_at,duration_ms,meta)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      id, agent_id, task_id, label, model, status, input_tokens, output_tokens, cost, ts, ts, duration_ms,
+      meta ? JSON.stringify(meta) : null);
+    emit(logActivity({ actor: agent_id, type: 'run.record', entity: 'run', entity_id: id,
+      summary: `🧾 ${label}: ${input_tokens + output_tokens} tok, $${cost.toFixed(4)}` }));
+    return get(`SELECT * FROM runs WHERE id=?`, id);
+  },
+
+  list: (limit = 50) => all(`SELECT * FROM runs ORDER BY started_at DESC LIMIT ?`, limit),
+
+  summary() {
+    const totals = get(`SELECT COUNT(*) runs, COALESCE(SUM(input_tokens),0) input_tokens,
+        COALESCE(SUM(output_tokens),0) output_tokens, COALESCE(SUM(cost_usd),0) cost_usd FROM runs`);
+    const byAgent = all(`SELECT r.agent_id, a.name, a.avatar,
+        COUNT(*) runs, COALESCE(SUM(r.input_tokens),0) input_tokens,
+        COALESCE(SUM(r.output_tokens),0) output_tokens, COALESCE(SUM(r.cost_usd),0) cost_usd
+      FROM runs r LEFT JOIN agents a ON a.id=r.agent_id
+      GROUP BY r.agent_id ORDER BY cost_usd DESC`);
+    const byModel = all(`SELECT COALESCE(model,'unknown') model, COUNT(*) runs,
+        COALESCE(SUM(cost_usd),0) cost_usd FROM runs GROUP BY model ORDER BY cost_usd DESC`);
+    return {
+      total_runs: totals.runs,
+      total_tokens: totals.input_tokens + totals.output_tokens,
+      total_input_tokens: totals.input_tokens,
+      total_output_tokens: totals.output_tokens,
+      total_cost_usd: Math.round(totals.cost_usd * 1e6) / 1e6,
+      by_agent: byAgent,
+      by_model: byModel,
+      prices: priceTable(),
+    };
+  },
+};
+
 // ── Activity / Stats ─────────────────────────────────────────────────────────
 export const Activity = {
   recent: (limit = 80) => all(`SELECT * FROM activity ORDER BY ts DESC LIMIT ?`, limit)
@@ -356,6 +431,9 @@ export const Stats = {
       tasks: get(`SELECT COUNT(*) n FROM tasks`).n,
       memories: get(`SELECT COUNT(*) n FROM memories`).n,
       messages: get(`SELECT COUNT(*) n FROM messages`).n,
+      runs: get(`SELECT COUNT(*) n FROM runs`).n,
+      cost_usd: Math.round((get(`SELECT COALESCE(SUM(cost_usd),0) c FROM runs`).c) * 1e6) / 1e6,
+      tokens: (get(`SELECT COALESCE(SUM(input_tokens+output_tokens),0) t FROM runs`).t),
       by_column: counts,
       board_id: board.id,
     };

@@ -108,6 +108,26 @@ main { grid-area: main; overflow: auto; padding: 18px 22px; }
 .msg .mh .t { margin-left: auto; color: var(--muted); font-size: 10px; }
 .msg .mb { margin-top: 7px; font-size: 13.5px; white-space: pre-wrap; }
 
+/* Ledger */
+.ledger-totals { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+.lt { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 18px; min-width: 110px; }
+.lt b { display: block; font-size: 22px; color: var(--green); }
+.lt span { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+.lh { font-size: 13px; color: var(--muted); margin: 18px 0 10px; text-transform: uppercase; letter-spacing: .6px; }
+.ledger-agents { display: flex; flex-direction: column; gap: 10px; max-width: 720px; }
+.la { display: grid; grid-template-columns: 180px 1fr auto; gap: 12px; align-items: center; }
+.la-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar { background: var(--panel-2); border-radius: 20px; height: 16px; overflow: hidden; border: 1px solid var(--line); }
+.bar .fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+.la-fig { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.runs { display: flex; flex-direction: column; gap: 4px; max-width: 860px; }
+.run { display: grid; grid-template-columns: 24px 1fr 140px 150px 90px 80px; gap: 8px; align-items: center; padding: 7px 8px; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+.r-status { text-align: center; }
+.r-done { color: var(--green); } .r-running { color: var(--amber); } .r-error { color: var(--red); }
+.r-label { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.r-agent, .r-model, .r-tok { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.r-cost { color: var(--green); text-align: right; }
+
 /* Activity */
 .feed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .feed li { padding: 8px 10px; border-bottom: 1px solid var(--line); font-size: 12.5px; display: flex; gap: 8px; align-items: baseline; }

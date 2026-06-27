@@ -238,6 +238,63 @@ const tools = [
     run: (a) => hq('GET', '/api/activity?limit=' + (a.limit || 40)),
   },
   {
+    name: 'run_start',
+    description: 'Begin a tracked unit of work (a "run") for cost/token accounting. Sets you to working. Returns a run id to pass to run_end. Use run_record instead if the work is already finished.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agent_id: { type: 'string', description: 'Your agent id' },
+        task_id: { type: 'string', description: 'Optional task this run is for' },
+        label: { type: 'string', description: 'Short description of the work' },
+        model: { type: 'string', description: 'Model used, e.g. claude-opus-4-8 (drives cost)' },
+      },
+      required: ['agent_id', 'label'],
+    },
+    run: (a) => hq('POST', '/api/runs', a),
+  },
+  {
+    name: 'run_end',
+    description: 'Finish a tracked run, recording token usage. Cost is computed from the model price table (or pass cost_usd to override). Sets you back to idle.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        run_id: { type: 'string' },
+        input_tokens: { type: 'integer' },
+        output_tokens: { type: 'integer' },
+        model: { type: 'string' },
+        cost_usd: { type: 'number', description: 'Override computed cost' },
+        status: { type: 'string', enum: ['done', 'error'] },
+      },
+      required: ['run_id'],
+    },
+    run: (a) => hq('PATCH', `/api/runs/${a.run_id}`, a),
+  },
+  {
+    name: 'run_record',
+    description: 'Record an already-completed run in one call (token usage + cost). Use this to log work after the fact.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agent_id: { type: 'string' },
+        task_id: { type: 'string' },
+        label: { type: 'string' },
+        model: { type: 'string' },
+        input_tokens: { type: 'integer' },
+        output_tokens: { type: 'integer' },
+        cost_usd: { type: 'number' },
+        duration_ms: { type: 'integer' },
+      },
+      required: ['label'],
+    },
+    run: (a) => hq('POST', '/api/runs/record', a),
+  },
+  {
+    name: 'ledger_summary',
+    description: 'Get the company cost/token ledger: totals, spend per agent, and spend per model.',
+    inputSchema: { type: 'object', properties: {} },
+    run: () => hq('GET', '/api/ledger'),
+  },
+  {
     name: 'company_stats',
     description: 'Get a summary of company state: agent counts, task counts per column, memory count.',
     inputSchema: { type: 'object', properties: {} },
