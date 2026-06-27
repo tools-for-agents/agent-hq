@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agent HQ · tools-for-agents</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛰️</text></svg>" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🛰️</span>
+      <div>
+        <h1>Agent HQ</h1>
+        <span class="sub">the all-agent company · <code>tools-for-agents</code></span>
+      </div>
+    </div>
+    <div class="stats" id="stats"></div>
+    <div class="conn" id="conn"><span class="dot"></span><span id="conn-label">connecting…</span></div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-view="board">🗂️ Kanban</button>
+    <button class="tab" data-view="agents">🤖 Agents</button>
+    <button class="tab" data-view="memory">🧠 Memory</button>
+    <button class="tab" data-view="activity">📡 Activity</button>
+  </nav>
+
+  <main>
+    <section id="view-board" class="view active">
+      <div class="board" id="board"></div>
+    </section>
+
+    <section id="view-agents" class="view">
+      <div class="grid" id="agents"></div>
+    </section>
+
+    <section id="view-memory" class="view">
+      <div class="mem-toolbar">
+        <input id="mem-search" placeholder="search memory…  (title / content)" />
+      </div>
+      <div class="mem-list" id="memory"></div>
+    </section>
+
+    <section id="view-activity" class="view">
+      <ul class="feed" id="activity-full"></ul>
+    </section>
+  </main>
+
+  <aside class="ticker">
+    <div class="ticker-head">📡 Live feed</div>
+    <ul class="feed" id="activity-mini"></ul>
+  </aside>
+
+  <script src="/app.js"></script>
+</body>
+</html>

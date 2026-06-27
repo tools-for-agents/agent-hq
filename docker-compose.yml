@@ -1,0 +1,13 @@
+services:
+  agent-hq:
+    build: .
+    image: agent-hq:latest
+    container_name: agent-hq
+    ports:
+      - "7700:7700"
+    volumes:
+      - hq-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  hq-data:

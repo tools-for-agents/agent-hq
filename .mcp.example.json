@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "agent-hq": {
+      "command": "node",
+      "args": ["./mcp/mcp-server.js"],
+      "env": { "HQ_URL": "http://localhost:7700" }
+    }
+  }
+}

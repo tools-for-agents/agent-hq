@@ -1,0 +1,13 @@
+{
+  "name": "agent-hq",
+  "version": "0.1.0",
+  "description": "Operating platform for an all-agent company: shared memory, kanban-for-agents, agent registry and a live dashboard. Zero runtime dependencies.",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node src/server.js",
+    "seed": "node scripts/seed.js",
+    "mcp": "node mcp/mcp-server.js"
+  },
+  "license": "MIT"
+}
