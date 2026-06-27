@@ -110,6 +110,79 @@ const tools = [
     run: (a) => hq('PATCH', `/api/tasks/${a.task_id}`, { ...a, _actor: a.actor }),
   },
   {
+    name: 'kanban_claim_task',
+    description: 'Atomically claim a task so no other agent works it in parallel. Sets you as assignee with a time-limited lease (auto-released if it expires). Returns ok:false if already held by someone else.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string' },
+        agent: { type: 'string', description: 'Your agent id' },
+        lease_ms: { type: 'integer', description: 'Lease duration in ms (default 600000 = 10 min)' },
+      },
+      required: ['task_id', 'agent'],
+    },
+    run: (a) => hq('POST', `/api/tasks/${a.task_id}/claim`, { agent: a.agent, lease_ms: a.lease_ms }),
+  },
+  {
+    name: 'kanban_next_task',
+    description: 'Pull and atomically claim the highest-priority unclaimed task that is not Done. The right way to ask "what should I work on next?" without colliding with other agents.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agent: { type: 'string', description: 'Your agent id' },
+        lease_ms: { type: 'integer' },
+      },
+      required: ['agent'],
+    },
+    run: (a) => hq('POST', '/api/tasks/next', { agent: a.agent, lease_ms: a.lease_ms }),
+  },
+  {
+    name: 'kanban_release_task',
+    description: 'Release a task you hold so another agent can pick it up (e.g. you are blocked or done with your part).',
+    inputSchema: {
+      type: 'object',
+      properties: { task_id: { type: 'string' }, agent: { type: 'string' } },
+      required: ['task_id', 'agent'],
+    },
+    run: (a) => hq('POST', `/api/tasks/${a.task_id}/release`, { agent: a.agent }),
+  },
+  {
+    name: 'message_send',
+    description: 'Send a message to another agent (to_agent = their id) or broadcast to everyone (omit to_agent). Use to coordinate, hand off, or ask for help.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        from_agent: { type: 'string', description: 'Your agent id' },
+        to_agent: { type: 'string', description: 'Recipient agent id; omit to broadcast' },
+        task_id: { type: 'string', description: 'Optional task this relates to' },
+        body: { type: 'string' },
+      },
+      required: ['from_agent', 'body'],
+    },
+    run: (a) => hq('POST', '/api/messages', a),
+  },
+  {
+    name: 'message_inbox',
+    description: 'Read your inbox: direct messages to you plus broadcasts. Optionally only unread, and optionally mark them read.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agent: { type: 'string', description: 'Your agent id' },
+        unread_only: { type: 'boolean' },
+        mark_read: { type: 'boolean' },
+        limit: { type: 'integer' },
+      },
+      required: ['agent'],
+    },
+    run: (a) => {
+      const qs = new URLSearchParams({ agent: a.agent });
+      if (a.unread_only) qs.set('unread', '1');
+      if (a.mark_read) qs.set('mark_read', '1');
+      if (a.limit) qs.set('limit', String(a.limit));
+      return hq('GET', '/api/inbox?' + qs.toString());
+    },
+  },
+  {
     name: 'kanban_comment',
     description: 'Add a comment / progress note to a task.',
     inputSchema: {

@@ -54,8 +54,20 @@ export const Agents = {
   heartbeat(id) {
     const a = Agents.get(id);
     if (!a) throw new Error('agent not found');
-    run(`UPDATE agents SET last_seen=? WHERE id=?`, now(), a.id);
+    run(`UPDATE agents SET last_seen=?, status=CASE WHEN status='offline' THEN 'idle' ELSE status END WHERE id=?`, now(), a.id);
     return { ok: true, ts: now() };
+  },
+
+  // Mark agents whose heartbeat went stale as offline (keeps the board honest).
+  reapStale(threshold_ms = 90_000) {
+    const cutoff = new Date(Date.now() - threshold_ms).toISOString();
+    const stale = all(`SELECT id,name,avatar FROM agents WHERE status!='offline' AND (last_seen IS NULL OR last_seen < ?)`, cutoff);
+    for (const a of stale) {
+      run(`UPDATE agents SET status='offline', updated_at=? WHERE id=?`, now(), a.id);
+      emit(logActivity({ actor: a.id, type: 'agent.offline', entity: 'agent', entity_id: a.id,
+        summary: `${a.avatar || '🤖'} ${a.name} went offline (stale heartbeat)` }));
+    }
+    return { offlined: stale.length };
   },
 };
 
@@ -178,6 +190,53 @@ export const Tasks = {
     return Tasks.get(id);
   },
 
+  // Atomically claim a task. Succeeds only if it is free, the lease has expired,
+  // or it is already held by this agent (refreshes the lease). Prevents two
+  // agents from grabbing the same work.
+  claim(id, agent, lease_ms = 600_000) {
+    if (!agent) throw new Error('agent required to claim');
+    const t = get(`SELECT * FROM tasks WHERE id=?`, id);
+    if (!t) throw new Error('task not found');
+    const ts = now();
+    const until = new Date(Date.now() + Math.max(30_000, lease_ms)).toISOString();
+    const r = run(
+      `UPDATE tasks SET assignee=?, claimed_at=?, lease_until=?, updated_at=?
+       WHERE id=? AND (assignee IS NULL OR assignee='' OR assignee=? OR lease_until IS NULL OR lease_until < ?)`,
+      agent, ts, until, ts, id, agent, ts);
+    if (r.changes === 0) {
+      return { ok: false, reason: 'already claimed', held_by: t.assignee, lease_until: t.lease_until };
+    }
+    emit(logActivity({ actor: agent, type: 'task.claimed', entity: 'task', entity_id: id,
+      summary: `🔒 claimed "${t.title}"` }));
+    return { ok: true, task: Tasks.get(id) };
+  },
+
+  release(id, agent) {
+    const t = get(`SELECT * FROM tasks WHERE id=?`, id);
+    if (!t) throw new Error('task not found');
+    const r = run(`UPDATE tasks SET assignee=NULL, claimed_at=NULL, lease_until=NULL, updated_at=?
+                   WHERE id=? AND (assignee=? OR ?='')`, now(), id, agent, agent || '');
+    if (r.changes) emit(logActivity({ actor: agent, type: 'task.released', entity: 'task', entity_id: id,
+      summary: `🔓 released "${t.title}"` }));
+    return { ok: r.changes > 0 };
+  },
+
+  // Pull the highest-priority unclaimed task (not in a Done column) and claim it.
+  next(agent, { board_id, lease_ms } = {}) {
+    if (!agent) throw new Error('agent required');
+    const ts = now();
+    let sql = `SELECT t.* FROM tasks t JOIN columns c ON c.id=t.column_id
+               WHERE lower(c.name) != 'done'
+                 AND (t.assignee IS NULL OR t.assignee='' OR t.lease_until < ?)`;
+    const args = [ts];
+    if (board_id) { sql += ` AND t.board_id=?`; args.push(board_id); }
+    sql += ` ORDER BY CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1
+             WHEN 'medium' THEN 2 ELSE 3 END, t.created_at LIMIT 1`;
+    const cand = get(sql, ...args);
+    if (!cand) return { ok: false, reason: 'no available tasks' };
+    return Tasks.claim(cand.id, agent, lease_ms);
+  },
+
   remove(id, actor = null) {
     const t = get(`SELECT * FROM tasks WHERE id=?`, id);
     if (!t) return { ok: false };
@@ -234,6 +293,51 @@ export const Memory = {
   },
 };
 
+// ── Messages (agent-to-agent inbox) ──────────────────────────────────────────
+export const Messages = {
+  send({ from_agent = null, to_agent = null, task_id = null, body }) {
+    if (!body) throw new Error('body required');
+    const id = uid('msg_');
+    run(`INSERT INTO messages (id,from_agent,to_agent,task_id,body,read,created_at)
+         VALUES (?,?,?,?,?,0,?)`, id, from_agent, to_agent, task_id, body, now());
+    const fromName = from_agent ? (Agents.get(from_agent)?.name || from_agent) : 'someone';
+    const toName = to_agent ? (Agents.get(to_agent)?.name || to_agent) : 'everyone';
+    emit(logActivity({ actor: from_agent, type: 'message.sent', entity: 'message', entity_id: id,
+      summary: `✉️ ${fromName} → ${toName}: ${body.slice(0, 60)}` }));
+    return get(`SELECT * FROM messages WHERE id=?`, id);
+  },
+
+  // Inbox = direct messages to me + broadcasts (not authored by me). Read state
+  // is per-agent (message_reads), so broadcasts are unread until each agent reads.
+  inbox({ agent, unread_only = false, limit = 50, mark_read = false }) {
+    if (!agent) throw new Error('agent required');
+    let sql = `SELECT m.*, (r.agent_id IS NOT NULL) AS is_read
+               FROM messages m
+               LEFT JOIN message_reads r ON r.message_id=m.id AND r.agent_id=?
+               WHERE (m.to_agent=? OR m.to_agent IS NULL) AND (m.from_agent IS NULL OR m.from_agent!=?)`;
+    const args = [agent, agent, agent];
+    if (unread_only) sql += ` AND r.agent_id IS NULL`;
+    sql += ` ORDER BY m.created_at DESC LIMIT ?`; args.push(Math.min(limit, 200));
+    const rows = all(sql, ...args).map((m) => ({ ...m, is_read: !!m.is_read }));
+    if (mark_read && rows.length) {
+      for (const m of rows) {
+        run(`INSERT OR IGNORE INTO message_reads (message_id,agent_id,read_at) VALUES (?,?,?)`,
+          m.id, agent, now());
+      }
+    }
+    return rows;
+  },
+
+  unreadCount(agent) {
+    return get(`SELECT COUNT(*) n FROM messages m
+                LEFT JOIN message_reads r ON r.message_id=m.id AND r.agent_id=?
+                WHERE (m.to_agent=? OR m.to_agent IS NULL) AND (m.from_agent IS NULL OR m.from_agent!=?)
+                  AND r.agent_id IS NULL`, agent, agent, agent).n;
+  },
+
+  recent: (limit = 50) => all(`SELECT * FROM messages ORDER BY created_at DESC LIMIT ?`, limit),
+};
+
 // ── Activity / Stats ─────────────────────────────────────────────────────────
 export const Activity = {
   recent: (limit = 80) => all(`SELECT * FROM activity ORDER BY ts DESC LIMIT ?`, limit)
@@ -248,8 +352,10 @@ export const Stats = {
     return {
       agents: get(`SELECT COUNT(*) n FROM agents`).n,
       agents_working: get(`SELECT COUNT(*) n FROM agents WHERE status='working'`).n,
+      agents_offline: get(`SELECT COUNT(*) n FROM agents WHERE status='offline'`).n,
       tasks: get(`SELECT COUNT(*) n FROM tasks`).n,
       memories: get(`SELECT COUNT(*) n FROM memories`).n,
+      messages: get(`SELECT COUNT(*) n FROM messages`).n,
       by_column: counts,
       board_id: board.id,
     };

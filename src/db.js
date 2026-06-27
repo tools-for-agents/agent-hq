@@ -92,11 +92,38 @@ CREATE TABLE IF NOT EXISTS activity (
   data      TEXT
 );
 
+CREATE TABLE IF NOT EXISTS messages (
+  id         TEXT PRIMARY KEY,
+  from_agent TEXT,
+  to_agent   TEXT,                                -- null = broadcast to all
+  task_id    TEXT,                                -- optional context
+  body       TEXT NOT NULL,
+  read       INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+
+-- per-agent read receipts so broadcasts have correct unread state per agent
+CREATE TABLE IF NOT EXISTS message_reads (
+  message_id TEXT NOT NULL,
+  agent_id   TEXT NOT NULL,
+  read_at    TEXT NOT NULL,
+  PRIMARY KEY (message_id, agent_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_tasks_board   ON tasks(board_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_col     ON tasks(column_id);
 CREATE INDEX IF NOT EXISTS idx_mem_agent     ON memories(agent_id);
 CREATE INDEX IF NOT EXISTS idx_activity_ts   ON activity(ts);
+CREATE INDEX IF NOT EXISTS idx_msg_to        ON messages(to_agent, read);
 `);
+
+// Lightweight migration: add columns introduced after first release.
+function ensureColumn(table, col, decl) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+  if (!cols.includes(col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`);
+}
+ensureColumn('tasks', 'claimed_at', 'TEXT');     // when the current assignee claimed it
+ensureColumn('tasks', 'lease_until', 'TEXT');    // claim expires at this time (auto-released)
 
 export const now = () => new Date().toISOString();
 export const uid = (p = '') => p + randomUUID().slice(0, 8);

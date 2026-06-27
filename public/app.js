@@ -18,6 +18,8 @@ document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () 
   document.querySelectorAll('.view').forEach((x) => x.classList.remove('active'));
   t.classList.add('active');
   $('#view-' + t.dataset.view).classList.add('active');
+  if (t.dataset.view === 'messages') renderMessages();
+  if (t.dataset.view === 'memory') renderMemory($('#mem-search').value);
 }));
 
 // ── Renderers ───────────────────────────────────────────────────────────
@@ -28,6 +30,7 @@ async function renderStats() {
     ['working', s.agents_working, 'working'],
     ['tasks', s.tasks, 'tasks'],
     ['memories', s.memories, 'memories'],
+    ['messages', s.messages ?? 0, 'messages'],
   ].map(([_, v, l]) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`).join('');
 }
 
@@ -45,14 +48,31 @@ async function renderBoard() {
 function card(t) {
   const a = AGENTS[t.assignee];
   const labels = (t.labels || []).map((l) => `<span class="label">${esc(l)}</span>`).join('');
-  return `<div class="card p-${esc(t.priority)}">
-    <div class="title">${esc(t.title)}</div>
+  const leased = t.lease_until && new Date(t.lease_until) > new Date();
+  return `<div class="card p-${esc(t.priority)}${leased ? ' claimed' : ''}">
+    <div class="title">${leased ? '🔒 ' : ''}${esc(t.title)}</div>
     <div class="meta">
       ${a ? `<span class="chip assignee">${a.avatar} ${esc(a.name)}</span>` : ''}
       <span class="chip">${esc(t.priority)}</span>
       ${labels}
     </div>
   </div>`;
+}
+
+async function renderMessages() {
+  const list = await api('/messages?limit=60');
+  $('#messages').innerHTML = list.length ? list.map((m) => {
+    const from = AGENTS[m.from_agent]; const to = AGENTS[m.to_agent];
+    return `<div class="msg">
+      <div class="mh">
+        <span class="from">${from ? from.avatar + ' ' + esc(from.name) : 'system'}</span>
+        <span class="arrow">→</span>
+        <span class="to">${to ? to.avatar + ' ' + esc(to.name) : '📢 everyone'}</span>
+        <span class="t">${ago(m.created_at)}</span>
+      </div>
+      <div class="mb">${esc(m.body)}</div>
+    </div>`;
+  }).join('') : '<div class="empty">No messages yet.</div>';
 }
 
 async function renderAgents() {
@@ -99,6 +119,7 @@ function refreshAll() {
     await renderAgents();           // load agents first (used by board/feed)
     renderStats(); renderBoard(); renderActivity();
     if ($('#view-memory').classList.contains('active')) renderMemory($('#mem-search').value);
+    if ($('#view-messages').classList.contains('active')) renderMessages();
   }, 120);
 }
 

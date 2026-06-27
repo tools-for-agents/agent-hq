@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, extname, normalize } from 'node:path';
-import { Agents, Boards, Tasks, Memory, Activity, Stats } from './services.js';
+import { Agents, Boards, Tasks, Memory, Messages, Activity, Stats } from './services.js';
 import { addClient } from './events.js';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -64,6 +64,14 @@ route('PATCH', '/api/tasks/:id', (p, body) => Tasks.update(p.id, body, body._act
 route('DELETE', '/api/tasks/:id', (p, body) => Tasks.remove(p.id, body && body._actor));
 route('POST', '/api/tasks/:id/comments', (p, body) => Tasks.comment(p.id, body));
 route('POST', '/api/tasks/:id/deps', (p, body) => Tasks.addDep(p.id, body.depends_on));
+route('POST', '/api/tasks/:id/claim', (p, body) => Tasks.claim(p.id, body.agent, body.lease_ms));
+route('POST', '/api/tasks/:id/release', (p, body) => Tasks.release(p.id, body.agent));
+route('POST', '/api/tasks/next', (_p, body) => Tasks.next(body.agent, { board_id: body.board_id, lease_ms: body.lease_ms }));
+
+// Messages
+route('GET', '/api/messages', (_p, _b, q) => Messages.recent(q.limit ? +q.limit : 50));
+route('POST', '/api/messages', (_p, body) => Messages.send(body));
+route('GET', '/api/inbox', (_p, _b, q) => Messages.inbox({ agent: q.agent, unread_only: q.unread === '1', limit: q.limit ? +q.limit : 50, mark_read: q.mark_read === '1' }));
 
 // Memory
 route('GET', '/api/memory', (_p, _b, q) => Memory.search(q));
@@ -146,5 +154,8 @@ const server = createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   Boards.ensureDefault();
+  // Keep the board honest: agents that stop sending heartbeats go offline.
+  const STALE_MS = +(process.env.HQ_STALE_MS || 90_000);
+  setInterval(() => { try { Agents.reapStale(STALE_MS); } catch {} }, 30_000);
   console.log(`\n  ▟ Agent HQ running → http://localhost:${PORT}\n`);
 });

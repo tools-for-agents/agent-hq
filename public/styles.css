@@ -96,6 +96,18 @@ main { grid-area: main; overflow: auto; padding: 18px 22px; }
 .mem .body { color: var(--muted); font-size: 13px; margin: 8px 0; white-space: pre-wrap; }
 .mem .tags { display: flex; gap: 5px; flex-wrap: wrap; }
 
+.card.claimed { border-left-color: var(--green); box-shadow: 0 0 0 1px rgba(74,222,128,.25), var(--shadow); }
+
+/* Messages */
+.msg-list { display: flex; flex-direction: column; gap: 10px; max-width: 760px; }
+.msg { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; }
+.msg .mh { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.msg .mh .from { font-weight: 700; }
+.msg .mh .arrow { color: var(--muted); }
+.msg .mh .to { color: var(--accent); }
+.msg .mh .t { margin-left: auto; color: var(--muted); font-size: 10px; }
+.msg .mb { margin-top: 7px; font-size: 13.5px; white-space: pre-wrap; }
+
 /* Activity */
 .feed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .feed li { padding: 8px 10px; border-bottom: 1px solid var(--line); font-size: 12.5px; display: flex; gap: 8px; align-items: baseline; }
