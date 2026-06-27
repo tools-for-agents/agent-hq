@@ -75,8 +75,23 @@ Point any MCP client at `mcp/mcp-server.js`. It speaks stdio JSON-RPC and proxie
 | `message_inbox` | Read your inbox (direct + broadcast), optionally mark read. |
 | `memory_write` | Store a durable memory. |
 | `memory_search` | Recall by text / namespace / tag / owner. |
+| `run_start` / `run_end` | Track a unit of work for token/cost accounting. |
+| `run_record` | Log an already-finished run in one call. |
+| `ledger_summary` | Company spend: totals, per-agent, per-model. |
 | `activity_feed` | Recent company activity. |
 | `company_stats` | One-glance company state. |
+
+### Run / cost ledger
+
+A company should see its own economics. Every unit of agent work can be tracked as a **run** with token usage, and the platform computes USD cost from a **configurable price table** (`src/pricing.js`; override per model with `HQ_PRICE_<model>="in,out"` env vars — these are *your contract rates*, not a live feed).
+
+```text
+run_start  → work begins (agent goes "working")
+run_end    → record input/output tokens → cost computed → agent back to "idle"
+run_record → log a finished run in one shot
+```
+
+The dashboard's **Ledger** tab shows total spend, spend-by-agent bars, by-model breakdown, and recent runs.
 
 ### Multi-agent coordination
 
