@@ -64,6 +64,7 @@ route('PATCH', '/api/tasks/:id', (p, body) => Tasks.update(p.id, body, body._act
 route('DELETE', '/api/tasks/:id', (p, body) => Tasks.remove(p.id, body && body._actor));
 route('POST', '/api/tasks/:id/comments', (p, body) => Tasks.comment(p.id, body));
 route('POST', '/api/tasks/:id/deps', (p, body) => Tasks.addDep(p.id, body.depends_on));
+route('DELETE', '/api/tasks/:id/deps/:dep', (p) => Tasks.rmDep(p.id, p.dep));
 route('POST', '/api/tasks/:id/claim', (p, body) => Tasks.claim(p.id, body.agent, body.lease_ms));
 route('POST', '/api/tasks/:id/release', (p, body) => Tasks.release(p.id, body.agent));
 route('POST', '/api/tasks/next', (_p, body) => Tasks.next(body.agent, { board_id: body.board_id, lease_ms: body.lease_ms }));

@@ -55,9 +55,37 @@ const tools = [
   },
   {
     name: 'kanban_board',
-    description: 'Get the full company kanban board: columns and the tasks in each.',
+    description: 'Get the full company kanban board: columns and the tasks in each. Cards are summaries (title, priority, assignee, labels, description) — use kanban_get_task to read a single task with its full comment thread and dependencies.',
     inputSchema: { type: 'object', properties: {} },
     run: () => hq('GET', '/api/board'),
+  },
+  {
+    name: 'kanban_get_task',
+    description: 'Read one task in full: description, the complete comment thread, and dependencies. Read-only — does not claim or modify the task. Use this to catch up on a task before claiming it, or to re-read the discussion on a task you already hold.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string', description: 'The task id to read' },
+      },
+      required: ['task_id'],
+    },
+    run: (a) => hq('GET', `/api/tasks/${encodeURIComponent(a.task_id)}`),
+  },
+  {
+    name: 'kanban_list_tasks',
+    description: 'List tasks filtered by assignee, status (column name like "In Progress"), or board. The right way to answer "what am I assigned to?" or "what is in Review?" without pulling the entire board.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        assignee: { type: 'string', description: 'Filter to tasks assigned to this agent id' },
+        status: { type: 'string', description: 'Filter by column name, e.g. "Todo", "In Progress", "Done"' },
+        board_id: { type: 'string', description: 'Restrict to a specific board (defaults to all)' },
+      },
+    },
+    run: (a) => {
+      const qs = new URLSearchParams(Object.entries(a).filter(([, v]) => v != null)).toString();
+      return hq('GET', '/api/tasks' + (qs ? '?' + qs : ''));
+    },
   },
   {
     name: 'kanban_create_task',
@@ -195,6 +223,32 @@ const tools = [
       required: ['task_id', 'body'],
     },
     run: (a) => hq('POST', `/api/tasks/${a.task_id}/comments`, { author: a.author, body: a.body }),
+  },
+  {
+    name: 'kanban_add_dependency',
+    description: 'Declare that one task is blocked by another: task_id depends on depends_on. A task with an unfinished dependency is skipped by kanban_next_task until the dependency reaches a Done column, so work is handed out in the right order. Use when breaking work into ordered steps.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string', description: 'The dependent task (the one that is blocked)' },
+        depends_on: { type: 'string', description: 'The task that must be Done first' },
+      },
+      required: ['task_id', 'depends_on'],
+    },
+    run: (a) => hq('POST', `/api/tasks/${a.task_id}/deps`, { depends_on: a.depends_on }),
+  },
+  {
+    name: 'kanban_remove_dependency',
+    description: 'Remove a dependency previously added with kanban_add_dependency (task_id no longer depends on depends_on). Use to unblock a task whose dependency was wrong or no longer applies.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string', description: 'The dependent task to unblock' },
+        depends_on: { type: 'string', description: 'The dependency to remove' },
+      },
+      required: ['task_id', 'depends_on'],
+    },
+    run: (a) => hq('DELETE', `/api/tasks/${encodeURIComponent(a.task_id)}/deps/${encodeURIComponent(a.depends_on)}`),
   },
   {
     name: 'memory_write',

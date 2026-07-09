@@ -186,8 +186,36 @@ export const Tasks = {
   },
 
   addDep(id, depends_on) {
+    if (!depends_on) throw new Error('depends_on required');
+    if (id === depends_on) throw new Error('a task cannot depend on itself');
+    const t = get(`SELECT * FROM tasks WHERE id=?`, id);
+    if (!t) throw new Error('task not found');
+    const dep = get(`SELECT * FROM tasks WHERE id=?`, depends_on);
+    if (!dep) throw new Error('dependency task not found');
+    // Walk the existing graph from depends_on; if id is already reachable, the new
+    // edge would close a cycle (direct A↔B or transitive A→B→C→A) — reject it.
+    const seen = new Set();
+    const stack = [depends_on];
+    while (stack.length) {
+      const cur = stack.pop();
+      if (cur === id) throw new Error('that would create a circular dependency');
+      if (seen.has(cur)) continue;
+      seen.add(cur);
+      for (const r of all(`SELECT depends_on FROM task_deps WHERE task_id=?`, cur)) stack.push(r.depends_on);
+    }
     run(`INSERT OR IGNORE INTO task_deps (task_id,depends_on) VALUES (?,?)`, id, depends_on);
-    emit(null);
+    emit(logActivity({ type: 'task.dep_added', entity: 'task', entity_id: id,
+      summary: `🔗 "${t.title}" now depends on "${dep.title}"` }));
+    return Tasks.get(id);
+  },
+
+  rmDep(id, depends_on) {
+    const r = run(`DELETE FROM task_deps WHERE task_id=? AND depends_on=?`, id, depends_on);
+    if (r.changes) {
+      const t = get(`SELECT * FROM tasks WHERE id=?`, id);
+      emit(logActivity({ type: 'task.dep_removed', entity: 'task', entity_id: id,
+        summary: `🔓 dependency removed from "${t?.title ?? id}"` }));
+    }
     return Tasks.get(id);
   },
 
@@ -228,7 +256,13 @@ export const Tasks = {
     const ts = now();
     let sql = `SELECT t.* FROM tasks t JOIN columns c ON c.id=t.column_id
                WHERE lower(c.name) != 'done'
-                 AND (t.assignee IS NULL OR t.assignee='' OR t.lease_until < ?)`;
+                 AND (t.assignee IS NULL OR t.assignee='' OR t.lease_until < ?)
+                 AND NOT EXISTS (
+                   SELECT 1 FROM task_deps d
+                   JOIN tasks dt   ON dt.id = d.depends_on
+                   JOIN columns dc ON dc.id = dt.column_id
+                   WHERE d.task_id = t.id AND lower(dc.name) != 'done'
+                 )`;
     const args = [ts];
     if (board_id) { sql += ` AND t.board_id=?`; args.push(board_id); }
     sql += ` ORDER BY CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1
