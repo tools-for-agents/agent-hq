@@ -80,6 +80,14 @@ test('memory: write then search finds it', () => {
   assert.ok(Memory.search({ q: 'rotate' }).some((m) => m.title === 'Token rotation'));
 });
 
+test('memory: namespace filter narrows to one namespace (drives the dashboard filter chips)', () => {
+  Memory.write({ title: 'Infra note', content: 'x', namespace: 'nsfilter-ops' });
+  Memory.write({ title: 'Design note', content: 'y', namespace: 'nsfilter-design' });
+  const ops = Memory.search({ namespace: 'nsfilter-ops', limit: 100 });
+  assert.ok(ops.length >= 1 && ops.every((m) => m.namespace === 'nsfilter-ops'), 'only the requested namespace is returned');
+  assert.ok(!ops.some((m) => m.namespace === 'nsfilter-design'), 'other namespaces are excluded');
+});
+
 test('graph: memories link to their namespace, tags, and author', () => {
   const author = Agents.register({ name: 'Cartographer', role: 'graph tester', avatar: '🗺️' });
   const m1 = Memory.write({ title: 'Graph node A', content: 'x', namespace: 'gtest', tags: ['shared-tag', 'a-only'], agent_id: author.id });

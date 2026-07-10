@@ -172,6 +172,16 @@ main { grid-area: main; overflow: auto; padding: 18px 22px; }
 .r-cost { color: var(--green); text-align: right; }
 
 /* Activity */
+/* Memory namespace filter */
+.mem-filter { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+.mem-filter[hidden] { display: none; }
+.mem-filter .nsl { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 1px; margin-right: 4px; }
+.nsf { display: inline-flex; align-items: center; gap: 6px; background: var(--panel); border: 1px solid var(--line); color: var(--muted); border-radius: 20px; padding: 5px 11px; font-size: 12px; cursor: pointer; transition: color .12s, border-color .12s; }
+.nsf:hover { color: var(--txt); }
+.nsf.on { color: var(--accent); border-color: var(--accent); background: rgba(110,168,254,.1); }
+.nsf .nsn { font-size: 10px; color: var(--muted); background: var(--panel-2); border-radius: 20px; padding: 0 6px; font-variant-numeric: tabular-nums; }
+.nsf.on .nsn { color: var(--accent); }
+
 .act-filter { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
 .actf { background: var(--panel); border: 1px solid var(--line); color: var(--muted); border-radius: 20px; padding: 5px 12px; font-size: 12px; cursor: pointer; transition: color .12s, border-color .12s; }
 .actf:hover { color: var(--txt); }

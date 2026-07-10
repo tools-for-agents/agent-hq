@@ -188,21 +188,51 @@ async function renderAgents() {
     </div>`).join('') : '<div class="empty">No agents yet. They register themselves via the MCP tools.</div>';
 }
 
-async function renderMemory(q = '') {
-  const list = await api('/memory?limit=60' + (q ? '&q=' + encodeURIComponent(q) : ''));
-  $('#memory').innerHTML = list.length ? list.map((m) => `
-    <div class="mem" data-id="${esc(m.id)}">
+let memoryNamespace = null;   // null = all namespaces
+let MEM_CACHE = [];           // last fetched memory set (client-side namespace filtering)
+
+function memCard(m) {
+  return `<div class="mem" data-id="${esc(m.id)}">
       <div class="mt"><span>${esc(m.title)}</span><span class="imp">${'★'.repeat(m.importance)}</span></div>
       <div class="body">${esc(m.content)}</div>
       <div class="tags">${(m.tags || []).map((t) => `<span class="label">${esc(t)}</span>`).join('')}
         <span class="chip">${esc(m.namespace)}</span></div>
-    </div>`).join('') : '<div class="empty">No memories match.</div>';
+    </div>`;
 }
+// Namespace filter chips (from the fetched set, so counts reflect the current search).
+function renderMemoryFilter() {
+  const counts = {};
+  for (const m of MEM_CACHE) counts[m.namespace] = (counts[m.namespace] || 0) + 1;
+  if (memoryNamespace && !counts[memoryNamespace]) memoryNamespace = null;   // active ns fell out of the set
+  const names = Object.keys(counts).sort();
+  const el = $('#mem-filter');
+  if (names.length < 2) { el.hidden = true; el.innerHTML = ''; return; }     // nothing to filter by
+  el.hidden = false;
+  el.innerHTML = `<span class="nsl">namespace</span>` +
+    `<button class="nsf${!memoryNamespace ? ' on' : ''}" data-ns="">all <span class="nsn">${MEM_CACHE.length}</span></button>` +
+    names.map((n) => `<button class="nsf${memoryNamespace === n ? ' on' : ''}" data-ns="${esc(n)}">${esc(n)} <span class="nsn">${counts[n]}</span></button>`).join('');
+}
+function applyMemoryFilter() {
+  const shown = memoryNamespace ? MEM_CACHE.filter((m) => m.namespace === memoryNamespace) : MEM_CACHE;
+  $('#memory').innerHTML = shown.length ? shown.map(memCard).join('')
+    : `<div class="empty">${memoryNamespace ? 'No memories in “' + esc(memoryNamespace) + '”.' : 'No memories match.'}</div>`;
+}
+async function renderMemory(q = '') {
+  MEM_CACHE = await api('/memory?limit=60' + (q ? '&q=' + encodeURIComponent(q) : ''));
+  renderMemoryFilter();
+  applyMemoryFilter();
+}
+$('#mem-filter').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-ns]'); if (!b) return;
+  memoryNamespace = b.dataset.ns || null;
+  renderMemoryFilter(); applyMemoryFilter();
+});
 
 // Deep-link: open the Memory tab and highlight a specific memory (used by recall's
 // cross-tool "open in agent-hq" links). Clears any search filter so it's findable.
 async function focusMemory(id) {
   const search = $('#mem-search'); if (search) search.value = '';
+  memoryNamespace = null;                 // clear any namespace filter so the target is visible
   await renderMemory('');
   const card = document.querySelector(`.mem[data-id="${CSS.escape(id)}"]`);
   if (card) { card.scrollIntoView({ block: 'center', behavior: 'smooth' }); card.classList.add('focus'); setTimeout(() => card.classList.remove('focus'), 2600); }
