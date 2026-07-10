@@ -95,6 +95,8 @@ main { grid-area: main; overflow: auto; padding: 18px 22px; }
 .mem .imp { color: var(--amber); font-size: 12px; white-space: nowrap; }
 .mem .body { color: var(--muted); font-size: 13px; margin: 8px 0; white-space: pre-wrap; }
 .mem .tags { display: flex; gap: 5px; flex-wrap: wrap; }
+.mem.focus { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 0 24px rgba(110,168,254,.25); animation: memflash 2.6s ease-out; }
+@keyframes memflash { from { background: rgba(110,168,254,.18); } to { background: var(--panel); } }
 
 .card.claimed { border-left-color: var(--green); box-shadow: 0 0 0 1px rgba(74,222,128,.25), var(--shadow); }
 

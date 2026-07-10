@@ -140,12 +140,21 @@ async function renderAgents() {
 async function renderMemory(q = '') {
   const list = await api('/memory?limit=60' + (q ? '&q=' + encodeURIComponent(q) : ''));
   $('#memory').innerHTML = list.length ? list.map((m) => `
-    <div class="mem">
+    <div class="mem" data-id="${esc(m.id)}">
       <div class="mt"><span>${esc(m.title)}</span><span class="imp">${'★'.repeat(m.importance)}</span></div>
       <div class="body">${esc(m.content)}</div>
       <div class="tags">${(m.tags || []).map((t) => `<span class="label">${esc(t)}</span>`).join('')}
         <span class="chip">${esc(m.namespace)}</span></div>
     </div>`).join('') : '<div class="empty">No memories match.</div>';
+}
+
+// Deep-link: open the Memory tab and highlight a specific memory (used by recall's
+// cross-tool "open in agent-hq" links). Clears any search filter so it's findable.
+async function focusMemory(id) {
+  const search = $('#mem-search'); if (search) search.value = '';
+  await renderMemory('');
+  const card = document.querySelector(`.mem[data-id="${CSS.escape(id)}"]`);
+  if (card) { card.scrollIntoView({ block: 'center', behavior: 'smooth' }); card.classList.add('focus'); setTimeout(() => card.classList.remove('focus'), 2600); }
 }
 
 function feedItem(a, flash) {
@@ -187,10 +196,18 @@ function connect() {
 
 $('#mem-search').addEventListener('input', (e) => renderMemory(e.target.value));
 
+// Route the URL hash: "#memory=<id>" deep-links a specific memory; "#<view>"
+// opens a tab. Lets other tools (recall) link straight into the dashboard.
+async function routeHash() {
+  const h = location.hash.replace('#', '');
+  if (h.startsWith('memory=')) { activateTab('memory'); await focusMemory(decodeURIComponent(h.slice(7))); }
+  else if (h && document.querySelector(`.tab[data-view="${h}"]`)) activateTab(h);
+}
+addEventListener('hashchange', routeHash);
+
 // boot
 (async () => {
   await renderAgents(); renderStats(); renderBoard(); renderActivity(); renderMemory(); connect();
-  const initial = location.hash.replace('#', '');
-  if (initial && document.querySelector(`.tab[data-view="${initial}"]`)) activateTab(initial);
+  await routeHash();
 })();
 setInterval(renderStats, 15000);  // keep "last seen" fresh
