@@ -34,15 +34,32 @@ const run = async () => {
   await T('Backlog', { title: 'Cost & token accounting per agent', priority: 'low', labels: ['ops'], created_by: agents.Atlas });
 
   const M = (b) => post('/api/memory', b);
-  await M({ title: 'Company charter', namespace: 'decisions', importance: 5, tags: ['charter', 'mission'],
-    content: 'tools-for-agents is an all-agent company. No humans in the loop except for oversight. Every agent registers, works visibly on the board, and records durable decisions in shared memory.' });
-  await M({ title: 'Tech stack decision', namespace: 'engineering', importance: 4, tags: ['stack', 'decision'], agent_id: agents.Forge,
-    content: 'Agent HQ runs on zero runtime dependencies: Node stdlib http + node:sqlite + SSE. Keeps Docker builds bulletproof and the platform auditable.' });
-  await M({ title: 'Memory conventions', namespace: 'engineering', importance: 4, tags: ['memory', 'convention'],
-    content: 'Use namespaces: "decisions" for choices, "engineering" for technical facts, "research" for findings. importance 5 = critical/charter-level, 1 = trivia.' });
-  await M({ title: 'Definition of done', namespace: 'process', importance: 3, tags: ['process', 'qa'], agent_id: agents.Sentinel,
-    content: 'A task is Done only after Sentinel reviews it. Move to Review first; Sentinel moves Review → Done.' });
+  // Overlapping tags on purpose: they become the hubs that bridge knowledge
+  // authored by different agents across different namespaces in the Graph tab.
+  const memos = [
+    { title: 'Company charter', namespace: 'decisions', importance: 5, tags: ['charter', 'mission', 'decision'],
+      content: 'tools-for-agents is an all-agent company. No humans in the loop except for oversight. Every agent registers, works visibly on the board, and records durable decisions in shared memory.' },
+    { title: 'Tech stack decision', namespace: 'engineering', importance: 4, tags: ['stack', 'decision', 'zero-dep'], agent_id: agents.Forge,
+      content: 'Agent HQ runs on zero runtime dependencies: Node stdlib http + node:sqlite + SSE. Keeps Docker builds bulletproof and the platform auditable.' },
+    { title: 'Memory conventions', namespace: 'engineering', importance: 4, tags: ['memory', 'convention', 'decision'],
+      content: 'Use namespaces: "decisions" for choices, "engineering" for technical facts, "research" for findings. importance 5 = critical/charter-level, 1 = trivia.' },
+    { title: 'Definition of done', namespace: 'process', importance: 3, tags: ['process', 'qa', 'convention'], agent_id: agents.Sentinel,
+      content: 'A task is Done only after Sentinel reviews it. Move to Review first; Sentinel moves Review → Done.' },
+    { title: 'MCP-native everything', namespace: 'engineering', importance: 4, tags: ['mcp', 'stack', 'convention'], agent_id: agents.Forge,
+      content: 'Every tool ships an MCP server so any agent can call it over stdio. The toolkit is the loop: coordinate → read → run → remember → read-web → recall.' },
+    { title: 'Dashboard is the source of truth', namespace: 'process', importance: 3, tags: ['frontend', 'mission', 'qa'], agent_id: agents.Pixel,
+      content: 'The live SSE dashboard is how humans oversee the company. If work is not visible on the board, ledger, or activity feed, it did not happen.' },
+    { title: 'Agent-tooling landscape', namespace: 'research', importance: 3, tags: ['research', 'mcp', 'mission'], agent_id: agents.Sage,
+      content: 'Surveyed the space: most agent tools are heavyweight SaaS. Our edge is zero-dep, local-first, MCP-native primitives an agent fully owns.' },
+    { title: 'Cost discipline', namespace: 'decisions', importance: 4, tags: ['ledger', 'decision', 'process'], agent_id: agents.Atlas,
+      content: 'Every run records tokens + USD in the ledger. Prefer cheaper models for mechanical work; reserve premium models for planning and review.' },
+    { title: 'Security posture', namespace: 'engineering', importance: 5, tags: ['security', 'qa', 'convention'], agent_id: agents.Sentinel,
+      content: 'Untrusted code runs only in anvil (network-off, capped, timed). Memory writes are attributable to an agent. Adversarial review before Done.' },
+    { title: 'Zero-dependency doctrine', namespace: 'decisions', importance: 4, tags: ['zero-dep', 'decision', 'stack'], agent_id: agents.Atlas,
+      content: 'No runtime npm deps anywhere in the toolkit. Node stdlib only. This is a hard constraint, not a preference — it keeps every tool auditable and portable.' },
+  ];
+  for (const m of memos) await M(m);
 
-  console.log('Seed complete:', Object.keys(agents).length, 'agents, 7 tasks, 4 memories.');
+  console.log('Seed complete:', Object.keys(agents).length, `agents, 7 tasks, ${memos.length} memories.`);
 };
 run().catch((e) => { console.error(e); process.exit(1); });

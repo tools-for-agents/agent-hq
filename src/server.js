@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, extname, normalize } from 'node:path';
-import { Agents, Boards, Tasks, Memory, Messages, Ledger, Activity, Stats } from './services.js';
+import { Agents, Boards, Tasks, Memory, Messages, Ledger, Activity, Stats, Graph } from './services.js';
 import { addClient } from './events.js';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -90,6 +90,7 @@ route('DELETE', '/api/memory/:id', (p) => Memory.remove(p.id));
 // Activity + stats
 route('GET', '/api/activity', (_p, _b, q) => Activity.recent(q.limit ? +q.limit : 80));
 route('GET', '/api/stats', () => Stats.summary());
+route('GET', '/api/graph', () => Graph.build());
 route('GET', '/api/health', () => ({ ok: true, service: 'agent-hq', ts: new Date().toISOString() }));
 
 // ── Static file serving ───────────────────────────────────────────────────

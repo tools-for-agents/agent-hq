@@ -473,3 +473,72 @@ export const Stats = {
     };
   },
 };
+
+// ── Knowledge graph ──────────────────────────────────────────────────────────
+// The company's collective brain as a graph: agents *author* memories, memories
+// *belong to* namespaces and *carry* tags. Tags are the cross-cutting hubs that
+// connect knowledge authored by different agents in different namespaces.
+export const Graph = {
+  build() {
+    const memories = all(`SELECT * FROM memories ORDER BY updated_at DESC`).map((m) => parse(m, 'tags'));
+    const agents = all(`SELECT * FROM agents`);
+    const agentById = Object.fromEntries(agents.map((a) => [a.id, a]));
+
+    const nodes = [];
+    const edges = [];
+    const seen = new Set();
+    const addNode = (n) => { if (!seen.has(n.id)) { seen.add(n.id); nodes.push(n); } };
+
+    const nsCount = {};
+    const tagCount = {};
+    const agentMemN = {};
+
+    for (const m of memories) {
+      const snippet = (m.content || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+      addNode({
+        id: 'mem:' + m.id, type: 'memory', label: m.title,
+        importance: m.importance, namespace: m.namespace,
+        tags: m.tags, snippet, agent_id: m.agent_id,
+        updated_at: m.updated_at,
+      });
+
+      // memory → namespace
+      const ns = m.namespace || 'default';
+      nsCount[ns] = (nsCount[ns] || 0) + 1;
+      addNode({ id: 'ns:' + ns, type: 'namespace', label: ns });
+      edges.push({ source: 'mem:' + m.id, target: 'ns:' + ns, type: 'namespace' });
+
+      // agent → memory (author); null agent_id = shared/org-wide, no author node
+      if (m.agent_id && agentById[m.agent_id]) {
+        const a = agentById[m.agent_id];
+        agentMemN[a.id] = (agentMemN[a.id] || 0) + 1;
+        addNode({ id: 'agt:' + a.id, type: 'agent', label: a.name, avatar: a.avatar || '🤖', role: a.role, status: a.status });
+        edges.push({ source: 'agt:' + a.id, target: 'mem:' + m.id, type: 'authored' });
+      }
+
+      // memory → tag
+      for (const t of (m.tags || [])) {
+        tagCount[t] = (tagCount[t] || 0) + 1;
+        addNode({ id: 'tag:' + t, type: 'tag', label: t });
+        edges.push({ source: 'mem:' + m.id, target: 'tag:' + t, type: 'tagged' });
+      }
+    }
+
+    // annotate hub nodes with their degree so the client can size them
+    for (const n of nodes) {
+      if (n.type === 'namespace') n.count = nsCount[n.label] || 0;
+      else if (n.type === 'tag') n.count = tagCount[n.label] || 0;
+      else if (n.type === 'agent') n.count = agentMemN[n.id.slice(4)] || 0;
+    }
+
+    const byType = (t) => nodes.filter((n) => n.type === t).length;
+    return {
+      nodes, edges,
+      stats: {
+        memories: byType('memory'), agents: byType('agent'),
+        namespaces: byType('namespace'), tags: byType('tag'),
+        links: edges.length,
+      },
+    };
+  },
+};

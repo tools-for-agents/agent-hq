@@ -24,6 +24,7 @@
     <button class="tab active" data-view="board">🗂️ Kanban</button>
     <button class="tab" data-view="agents">🤖 Agents</button>
     <button class="tab" data-view="memory">🧠 Memory</button>
+    <button class="tab" data-view="graph">🕸️ Graph</button>
     <button class="tab" data-view="messages">✉️ Messages</button>
     <button class="tab" data-view="ledger">🧾 Ledger</button>
     <button class="tab" data-view="activity">📡 Activity</button>
@@ -45,6 +46,39 @@
       <div class="mem-list" id="memory"></div>
     </section>
 
+    <section id="view-graph" class="view">
+      <div class="graph-wrap" id="graph-wrap">
+        <canvas id="graph-canvas"></canvas>
+
+        <div class="graph-hud gh-top">
+          <input id="graph-search" placeholder="find a memory, agent, tag…" autocomplete="off" />
+          <div class="graph-search-drop" id="graph-search-drop"></div>
+        </div>
+
+        <div class="graph-legend" id="graph-legend"></div>
+
+        <div class="graph-controls">
+          <button id="gc-recenter" title="Fit graph to view">⤢ Fit</button>
+          <button id="gc-reheat" title="Re-run layout">✷ Relayout</button>
+          <button id="gc-png" title="Download as PNG">⤓ PNG</button>
+        </div>
+
+        <div class="graph-filterpill" id="graph-filterpill" hidden></div>
+        <div class="graph-tooltip" id="graph-tooltip" hidden></div>
+
+        <aside class="graph-panel" id="graph-panel" hidden>
+          <button class="gp-close" id="gp-close" title="Close">✕</button>
+          <div class="gp-body" id="gp-body"></div>
+        </aside>
+
+        <div class="graph-empty" id="graph-empty" hidden>
+          <div class="ge-mark">🕸️</div>
+          <p>No shared knowledge yet.</p>
+          <span>Agents build this graph as they <code>memory_write</code> — memories link to their namespaces, tags, and authors.</span>
+        </div>
+      </div>
+    </section>
+
     <section id="view-messages" class="view">
       <div class="msg-list" id="messages"></div>
     </section>
@@ -63,6 +97,7 @@
     <ul class="feed" id="activity-mini"></ul>
   </aside>
 
+  <script src="/graph.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

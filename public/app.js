@@ -23,6 +23,8 @@ function activateTab(view) {
   if (view === 'messages') renderMessages();
   if (view === 'memory') renderMemory($('#mem-search').value);
   if (view === 'ledger') renderLedger();
+  if (view === 'graph') window.HQGraph?.activate();
+  else window.HQGraph?.deactivate();
   if (location.hash !== '#' + view) history.replaceState(null, '', '#' + view);
 }
 document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => activateTab(t.dataset.view)));
@@ -167,6 +169,7 @@ function refreshAll() {
     if ($('#view-memory').classList.contains('active')) renderMemory($('#mem-search').value);
     if ($('#view-messages').classList.contains('active')) renderMessages();
     if ($('#view-ledger').classList.contains('active')) renderLedger();
+    window.HQGraph?.refresh();
   }, 120);
 }
 
