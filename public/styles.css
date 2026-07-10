@@ -222,6 +222,16 @@ main { grid-area: main; overflow: auto; padding: 18px 22px; }
 .nsf { display: inline-flex; align-items: center; gap: 6px; background: var(--panel); border: 1px solid var(--line); color: var(--muted); border-radius: 20px; padding: 5px 11px; font-size: 12px; cursor: pointer; transition: color .12s, border-color .12s; }
 .nsf:hover { color: var(--txt); }
 .nsf.on { color: var(--accent); border-color: var(--accent); background: rgba(110,168,254,.1); }
+/* Kanban filter (by assignee / label) */
+.board-filter { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+.board-filter[hidden] { display: none; }
+.bf-group { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.bf-group .bf-label { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 1px; margin-right: 2px; }
+.bf { background: var(--panel); border: 1px solid var(--line); color: var(--muted); border-radius: 20px; padding: 4px 11px; font-size: 12px; cursor: pointer; transition: color .12s, border-color .12s; }
+.bf:hover { color: var(--txt); }
+.bf.on { color: var(--accent); border-color: var(--accent); background: rgba(110,168,254,.1); }
+.bf.lbl.on { color: var(--accent-2); border-color: var(--accent-2); background: rgba(167,139,250,.12); }
+.card.filtered-out { display: none; }
 .nsf .nsn { font-size: 10px; color: var(--muted); background: var(--panel-2); border-radius: 20px; padding: 0 6px; font-variant-numeric: tabular-nums; }
 .nsf.on .nsn { color: var(--accent); }
 

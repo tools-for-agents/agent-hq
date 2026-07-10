@@ -46,10 +46,21 @@ async function renderStats() {
   ].map(([_, v, l]) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`).join('');
 }
 
+let boardAssignee = null, boardLabel = null;    // kanban filter (null = all)
+let boardAssignees = [], boardLabels = [];       // what's present on the current board
+
 async function renderBoard() {
   const b = await api('/board');
   TASK_INDEX = {};
-  for (const col of b.columns) for (const t of col.tasks) TASK_INDEX[t.id] = { title: t.title, column: col.name };
+  const aset = new Set(), lset = new Set();
+  for (const col of b.columns) for (const t of col.tasks) {
+    TASK_INDEX[t.id] = { title: t.title, column: col.name };
+    if (t.assignee) aset.add(t.assignee);
+    (t.labels || []).forEach((l) => lset.add(l));
+  }
+  boardAssignees = [...aset]; boardLabels = [...lset].sort();
+  if (boardAssignee && !aset.has(boardAssignee)) boardAssignee = null;   // filtered entity gone → reset
+  if (boardLabel && !lset.has(boardLabel)) boardLabel = null;
   $('#board').innerHTML = b.columns.map((col) => `
     <div class="column">
       <h3>${esc(col.name)} <span class="count">${col.tasks.length}</span></h3>
@@ -57,13 +68,15 @@ async function renderBoard() {
         ${col.tasks.map(card).join('') || '<div class="empty" style="padding:14px">—</div>'}
       </div>
     </div>`).join('');
+  renderBoardFilter();
+  applyBoardFilter();
 }
 
 function card(t) {
   const a = AGENTS[t.assignee];
   const labels = (t.labels || []).map((l) => `<span class="label">${esc(l)}</span>`).join('');
   const leased = t.lease_until && new Date(t.lease_until) > new Date();
-  return `<div class="card p-${esc(t.priority)}${leased ? ' claimed' : ''}" data-task="${esc(t.id)}" role="button" tabindex="0" title="View task details">
+  return `<div class="card p-${esc(t.priority)}${leased ? ' claimed' : ''}" data-task="${esc(t.id)}" data-assignee="${esc(t.assignee || '')}" data-labels="${esc(JSON.stringify(t.labels || []))}" role="button" tabindex="0" title="View task details">
     <div class="title">${leased ? '🔒 ' : ''}${esc(t.title)}</div>
     <div class="meta">
       ${a ? `<span class="chip assignee">${a.avatar} ${esc(a.name)}</span>` : ''}
@@ -72,6 +85,39 @@ function card(t) {
     </div>
   </div>`;
 }
+
+// Filter the board by assignee and/or label (client-side; the two compose).
+function renderBoardFilter() {
+  const el = $('#board-filter');
+  if (!boardAssignees.length && !boardLabels.length) { el.hidden = true; el.innerHTML = ''; return; }
+  el.hidden = false;
+  const aGroup = boardAssignees.length ? `<div class="bf-group"><span class="bf-label">who</span>` +
+    `<button class="bf${!boardAssignee ? ' on' : ''}" data-assignee="">👥 all</button>` +
+    boardAssignees.map((id) => { const a = AGENTS[id]; return `<button class="bf${boardAssignee === id ? ' on' : ''}" data-assignee="${esc(id)}">${a ? (a.avatar || '🤖') + ' ' + esc(a.name) : esc(id)}</button>`; }).join('') + `</div>` : '';
+  const lGroup = boardLabels.length ? `<div class="bf-group"><span class="bf-label">label</span>` +
+    `<button class="bf${!boardLabel ? ' on' : ''}" data-label="">all</button>` +
+    boardLabels.map((l) => `<button class="bf lbl${boardLabel === l ? ' on' : ''}" data-label="${esc(l)}">${esc(l)}</button>`).join('') + `</div>` : '';
+  el.innerHTML = aGroup + lGroup;
+}
+function applyBoardFilter() {
+  document.querySelectorAll('#board .column').forEach((col) => {
+    const cards = col.querySelectorAll('.card'); let shown = 0;
+    cards.forEach((c) => {
+      const okA = !boardAssignee || c.dataset.assignee === boardAssignee;
+      let okL = true;
+      if (boardLabel) { try { okL = JSON.parse(c.dataset.labels || '[]').includes(boardLabel); } catch { okL = false; } }
+      const vis = okA && okL; c.classList.toggle('filtered-out', !vis); if (vis) shown++;
+    });
+    const cnt = col.querySelector('h3 .count');
+    if (cnt) cnt.textContent = (boardAssignee || boardLabel) ? `${shown}/${cards.length}` : `${cards.length}`;
+  });
+}
+$('#board-filter').addEventListener('click', (e) => {
+  const a = e.target.closest('[data-assignee]');
+  if (a) { boardAssignee = a.dataset.assignee || null; renderBoardFilter(); applyBoardFilter(); return; }
+  const l = e.target.closest('[data-label]');
+  if (l) { boardLabel = l.dataset.label || null; renderBoardFilter(); applyBoardFilter(); return; }
+});
 
 // ── Task-detail modal ───────────────────────────────────────────────────────
 async function openTask(id) {
