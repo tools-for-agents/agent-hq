@@ -113,10 +113,49 @@ function renderTaskModal(t) {
 // board card → open its task; a dep row inside the modal → open that task
 $('#board').addEventListener('click', (e) => { const c = e.target.closest('[data-task]'); if (c) openTask(c.dataset.task); });
 $('#board').addEventListener('keydown', (e) => { const c = e.target.closest('[data-task]'); if (c && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openTask(c.dataset.task); } });
-$('#tm-body').addEventListener('click', (e) => { const d = e.target.closest('.tm-dep[data-task]'); if (d) openTask(d.dataset.task); });
 $('#tm-close').addEventListener('click', closeTask);
 $('#task-modal').addEventListener('click', (e) => { if (e.target === $('#task-modal')) closeTask(); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#task-modal').hidden) closeTask(); });
+
+// ── Agent-detail modal (reuses the same modal shell) ─────────────────────────
+async function openAgent(id) {
+  const a = AGENTS[id]; if (!a) return;
+  const [mem, act, led] = await Promise.all([
+    api('/memory?agent_id=' + encodeURIComponent(id) + '&limit=100'),
+    api('/activity?actor=' + encodeURIComponent(id) + '&limit=12'),
+    api('/ledger'),
+  ]);
+  const authored = (Array.isArray(mem) ? mem : []).filter((m) => m.agent_id === id);   // exclude org-wide (NULL) memories
+  const spend = (led.by_agent || []).find((x) => x.agent_id === id);
+  renderAgentModal(a, authored, Array.isArray(act) ? act : [], spend);
+  $('#task-modal').hidden = false;
+}
+function renderAgentModal(a, mems, acts, spend) {
+  const pills = [
+    `<span class="tm-pill status-${esc(a.status)}"><span class="pd"></span>${esc(a.status)}</span>`,
+    `<span class="tm-pill">${esc(a.role)}</span>`,
+    (spend && spend.runs) ? `<span class="tm-pill">$${(spend.cost_usd || 0).toFixed(4)} · ${spend.runs} run${spend.runs === 1 ? '' : 's'} · ${fmtTok((spend.input_tokens || 0) + (spend.output_tokens || 0))} tok</span>` : '',
+  ].filter(Boolean).join('');
+  const memRows = mems.map((m) => `<div class="ag-row" data-mem="${esc(m.id)}" title="Open in the Memory tab"><span class="ag-ns">${esc(m.namespace)}</span><span class="ag-t">${esc(m.title)}</span><span class="ag-imp">${'★'.repeat(m.importance || 0)}</span></div>`).join('');
+  const actRows = acts.map((x) => `<div class="ag-act"><span class="t">${ago(x.ts)}</span><span class="s">${esc(x.summary)}</span></div>`).join('');
+  $('#tm-body').innerHTML = `
+    <h3 class="tm-h" id="tm-title">${a.avatar || '🤖'} ${esc(a.name)}</h3>
+    <div class="tm-pills">${pills}</div>
+    ${a.current_task ? `<div class="tm-sec"><h4>Current task</h4><div class="tm-desc">▶ ${esc(a.current_task)}</div></div>` : ''}
+    <div class="tm-sec"><h4>Memories authored${mems.length ? ' · ' + mems.length : ''}</h4>${memRows ? `<div class="ag-list">${memRows}</div>` : '<div class="tm-desc empty">None authored yet.</div>'}</div>
+    <div class="tm-sec"><h4>Recent activity</h4>${actRows ? `<div class="ag-acts">${actRows}</div>` : '<div class="tm-desc empty">No activity yet.</div>'}</div>
+    <div class="tm-foot">
+      <span>id ${esc(a.id)}</span>
+      <span>last seen ${a.last_seen ? ago(a.last_seen) + ' ago' : '—'}</span>
+    </div>`;
+}
+// agent card → open its profile; a memory row inside the modal → jump to it in the Memory tab
+$('#agents').addEventListener('click', (e) => { const c = e.target.closest('[data-agent]'); if (c) openAgent(c.dataset.agent); });
+$('#agents').addEventListener('keydown', (e) => { const c = e.target.closest('[data-agent]'); if (c && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openAgent(c.dataset.agent); } });
+$('#tm-body').addEventListener('click', (e) => {
+  const d = e.target.closest('.tm-dep[data-task]'); if (d) { openTask(d.dataset.task); return; }
+  const m = e.target.closest('.ag-row[data-mem]'); if (m) { closeTask(); activateTab('memory'); focusMemory(m.dataset.mem); }
+});
 
 const fmtTok = (n) => n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n || 0);
 const usd = (n) => '$' + (n || 0).toFixed(4);
@@ -178,7 +217,7 @@ async function renderAgents() {
   const list = await api('/agents');
   AGENTS = Object.fromEntries(list.map((a) => [a.id, a]));
   $('#agents').innerHTML = list.length ? list.map((a) => `
-    <div class="agent">
+    <div class="agent" data-agent="${esc(a.id)}" role="button" tabindex="0" title="View ${esc(a.name)}'s profile">
       <div class="ah">
         <span class="av">${a.avatar || '🤖'}</span>
         <div><div class="nm">${esc(a.name)}</div><div class="rl">${esc(a.role)}</div></div>

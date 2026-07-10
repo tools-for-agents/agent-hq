@@ -75,7 +75,22 @@ main { grid-area: main; overflow: auto; padding: 18px 22px; }
 
 /* Agents */
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
-.agent { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+.agent { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; cursor: pointer; transition: transform .08s, border-color .12s; }
+.agent:hover { transform: translateY(-1px); border-color: var(--accent); }
+
+/* Agent-detail modal extras (reuses the .tm-* modal classes) */
+.tm-pill.status-working { color: var(--green); border-color: var(--green); }
+.tm-pill.status-idle { color: var(--muted); }
+.tm-pill.status-offline { color: var(--red); border-color: var(--red); }
+.ag-list, .ag-acts { display: flex; flex-direction: column; gap: 6px; }
+.ag-row { display: flex; align-items: center; gap: 9px; padding: 7px 10px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line); cursor: pointer; font-size: 12.5px; transition: border-color .12s; }
+.ag-row:hover { border-color: var(--accent); }
+.ag-row .ag-ns { font-size: 10px; color: var(--muted); background: var(--bg); border: 1px solid var(--line); border-radius: 20px; padding: 1px 8px; flex: none; }
+.ag-row .ag-t { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ag-row .ag-imp { color: var(--amber); font-size: 11px; flex: none; }
+.ag-act { display: flex; gap: 10px; font-size: 12.5px; padding: 3px 10px; }
+.ag-act .t { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; flex: none; }
+.ag-act .s { color: var(--txt); }
 .agent .ah { display: flex; align-items: center; gap: 11px; }
 .agent .av { font-size: 30px; }
 .agent .nm { font-weight: 700; }

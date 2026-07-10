@@ -80,6 +80,14 @@ test('memory: write then search finds it', () => {
   assert.ok(Memory.search({ q: 'rotate' }).some((m) => m.title === 'Token rotation'));
 });
 
+test('memory: agent_id filter surfaces an agent\'s authored memories (the agent-detail modal)', () => {
+  const a = Agents.register({ name: 'Scribe', role: 'writer', avatar: '✍️' });
+  const m = Memory.write({ agent_id: a.id, title: 'Authored note', content: 'x', namespace: 'authors' });
+  const mine = Memory.search({ agent_id: a.id, limit: 100 }).find((x) => x.id === m.id);
+  assert.ok(mine, 'the authored memory is returned for its agent');
+  assert.equal(mine.agent_id, a.id, 'the memory carries its author id (the modal client-filters on this)');
+});
+
 test('memory: namespace filter narrows to one namespace (drives the dashboard filter chips)', () => {
   Memory.write({ title: 'Infra note', content: 'x', namespace: 'nsfilter-ops' });
   Memory.write({ title: 'Design note', content: 'y', namespace: 'nsfilter-design' });
