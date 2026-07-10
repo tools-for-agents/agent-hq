@@ -51,6 +51,11 @@ body {
 .tab:hover { color: var(--txt); background: var(--panel); }
 .tab.active { color: var(--txt); background: var(--panel); border: 1px solid var(--line); border-bottom: none; }
 
+/* ── Accessibility: a visible focus ring for keyboard users on every control ── */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input:focus-visible, input#graph-search:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.card:focus-visible, .agent:focus-visible, .nsf:focus-visible, .actf:focus-visible, .ag-row:focus-visible, .tm-dep:focus-visible { outline-offset: -2px; }
+
 /* Main */
 main { grid-area: main; overflow: auto; padding: 18px 22px; }
 .view { display: none; }
