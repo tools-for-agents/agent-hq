@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛰️</text></svg>" />
+<style>html,body{margin:0}</style>
+</head><body>
+<title>Agent HQ — Company Knowledge Graph</title>
+<style>
+  :root {
+    --bg:#080b12; --bg-2:#0b0f18; --panel:#0f1420; --panel-2:#141b2a;
+    --line:#20293b; --line-2:#2b374e;
+    --txt:#e8edf7; --muted:#7f8ca6; --dim:#59647c;
+    --memory:#6ea8fe; --agent:#a78bfa; --namespace:#5ee0a0; --tag:#fbbf24;
+    --accent:#6ea8fe;
+    --mono:"SFMono-Regular",ui-monospace,"Cascadia Code","JetBrains Mono","Menlo",monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; }
+  body {
+    background:
+      radial-gradient(1100px 620px at 82% -12%, rgba(110,168,254,.10), transparent 58%),
+      radial-gradient(900px 640px at 4% 112%, rgba(167,139,250,.10), transparent 60%),
+      var(--bg);
+    color:var(--txt); font-family:var(--sans);
+    height:100vh; overflow:hidden; -webkit-font-smoothing:antialiased;
+  }
+  #stage { position:fixed; inset:0; display:block; cursor:grab; touch-action:none; }
+  #stage:active { cursor:grabbing; }
+
+  /* ── Telemetry bar ─────────────────────────────────────────── */
+  .topbar {
+    position:fixed; top:0; left:0; right:0; z-index:5;
+    display:flex; align-items:center; gap:20px; padding:14px 22px;
+    background:linear-gradient(180deg, rgba(8,11,18,.86), rgba(8,11,18,0));
+    pointer-events:none;
+  }
+  .brand { display:flex; align-items:center; gap:12px; pointer-events:auto; }
+  .brand .sat { font-size:26px; filter:drop-shadow(0 0 12px rgba(110,168,254,.6)); }
+  .brand h1 { font-size:15px; margin:0; font-weight:650; letter-spacing:-.2px; }
+  .brand .eyebrow {
+    font-family:var(--mono); font-size:10.5px; color:var(--muted);
+    text-transform:uppercase; letter-spacing:1.6px;
+  }
+  .brand code { font-family:var(--mono); color:var(--agent); }
+  .readouts { display:flex; gap:8px; margin-left:auto; flex-wrap:wrap; pointer-events:auto; }
+  .ro {
+    font-family:var(--mono); background:rgba(15,20,32,.7); backdrop-filter:blur(8px);
+    border:1px solid var(--line); border-radius:9px; padding:6px 11px; text-align:center; min-width:58px;
+  }
+  .ro b { display:block; font-size:16px; font-weight:600; font-variant-numeric:tabular-nums; }
+  .ro span { font-size:9px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; }
+  .ro.m b { color:var(--memory); } .ro.a b { color:var(--agent); }
+  .ro.n b { color:var(--namespace); } .ro.t b { color:var(--tag); }
+
+  /* ── Legend / filters ──────────────────────────────────────── */
+  .legend {
+    position:fixed; left:22px; bottom:20px; z-index:5; display:flex; flex-direction:column; gap:6px;
+  }
+  .leg-title {
+    font-family:var(--mono); font-size:9.5px; color:var(--dim);
+    text-transform:uppercase; letter-spacing:1.6px; margin-bottom:2px; padding-left:2px;
+  }
+  .leg {
+    display:flex; align-items:center; gap:9px; font-family:var(--mono); font-size:11.5px;
+    background:rgba(15,20,32,.66); backdrop-filter:blur(8px); border:1px solid var(--line);
+    color:var(--txt); border-radius:9px; padding:6px 12px 6px 10px; cursor:pointer;
+    transition:opacity .15s, border-color .15s, transform .08s; text-align:left;
+  }
+  .leg:hover { border-color:var(--line-2); transform:translateX(2px); }
+  .leg.off { opacity:.38; }
+  .leg .dot { width:10px; height:10px; border-radius:50%; box-shadow:0 0 8px currentColor; flex:0 0 auto; }
+  .leg .lbl { flex:1; }
+  .leg .ct { color:var(--muted); font-variant-numeric:tabular-nums; }
+
+  /* ── Controls ──────────────────────────────────────────────── */
+  .controls { position:fixed; right:22px; bottom:20px; z-index:5; display:flex; gap:6px; }
+  .controls button {
+    font-family:var(--mono); font-size:11px; background:rgba(15,20,32,.66); backdrop-filter:blur(8px);
+    border:1px solid var(--line); color:var(--txt); border-radius:9px; padding:7px 12px; cursor:pointer;
+    transition:border-color .15s, background .15s;
+  }
+  .controls button:hover { border-color:var(--accent); background:var(--panel-2); }
+  .controls button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+
+  /* ── Hint caption ──────────────────────────────────────────── */
+  .hint {
+    position:fixed; left:50%; top:74px; transform:translateX(-50%); z-index:4;
+    font-family:var(--mono); font-size:11.5px; color:var(--muted);
+    background:rgba(15,20,32,.6); backdrop-filter:blur(8px); border:1px solid var(--line);
+    padding:6px 14px; border-radius:20px; transition:opacity .6s; pointer-events:none;
+  }
+  .hint b { color:var(--txt); font-weight:600; }
+
+  /* ── Tooltip ───────────────────────────────────────────────── */
+  .tip {
+    position:fixed; z-index:8; pointer-events:none; max-width:250px;
+    background:rgba(8,11,18,.95); backdrop-filter:blur(8px); border:1px solid var(--line-2);
+    border-radius:10px; padding:9px 12px; box-shadow:0 8px 30px rgba(0,0,0,.5);
+  }
+  .tip .tt { font-weight:650; font-size:13px; margin-bottom:3px; }
+  .tip .tk { font-family:var(--mono); font-size:10px; font-weight:600; letter-spacing:.3px; }
+  .tip .ts { color:var(--muted); font-size:11px; margin-top:2px; }
+
+  /* ── Detail panel ──────────────────────────────────────────── */
+  .panel {
+    position:fixed; z-index:9; right:0; top:0; height:100%; width:min(360px,86vw);
+    background:linear-gradient(180deg, rgba(11,15,24,.97), rgba(9,12,20,.97));
+    backdrop-filter:blur(16px); border-left:1px solid var(--line-2);
+    box-shadow:-16px 0 50px rgba(0,0,0,.5); overflow:auto;
+    transform:translateX(100%); transition:transform .28s cubic-bezier(.22,.61,.36,1);
+  }
+  .panel.open { transform:none; }
+  .panel .x {
+    position:absolute; top:14px; right:14px; width:30px; height:30px; border-radius:8px;
+    background:var(--panel-2); border:1px solid var(--line); color:var(--muted);
+    cursor:pointer; font-size:13px;
+  }
+  .panel .x:hover { color:var(--txt); border-color:var(--accent); }
+  .pb { padding:26px 22px; }
+  .kind { font-family:var(--mono); font-size:10.5px; font-weight:700; letter-spacing:1.4px; }
+  .pb h2 { font-size:21px; margin:8px 0 14px; line-height:1.22; letter-spacing:-.4px; text-wrap:balance; padding-right:24px; }
+  .prow { display:flex; align-items:center; gap:11px; flex-wrap:wrap; margin-bottom:14px; font-family:var(--mono); font-size:11.5px; }
+  .prow .imp { color:var(--tag); letter-spacing:1.5px; }
+  .prow .ns { color:var(--muted); }
+  .prow .badge { padding:2px 9px; border-radius:20px; border:1px solid var(--line-2); font-size:10.5px; }
+  .prow .badge.working { color:var(--namespace); border-color:rgba(94,224,160,.5); }
+  .content {
+    font-size:13.5px; line-height:1.62; background:var(--panel); border:1px solid var(--line);
+    border-radius:11px; padding:13px 15px; color:var(--txt); margin-bottom:6px;
+  }
+  .sect { font-family:var(--mono); font-size:9.5px; color:var(--dim); text-transform:uppercase; letter-spacing:1.5px; margin:18px 0 9px; }
+  .chips { display:flex; gap:7px; flex-wrap:wrap; }
+  .chips.col { flex-direction:column; align-items:flex-start; }
+  .chip {
+    display:inline-flex; align-items:center; gap:5px; max-width:100%; font-family:var(--mono); font-size:12px;
+    background:var(--panel-2); border:1px solid var(--line); color:var(--txt);
+    border-radius:8px; padding:6px 11px; cursor:pointer; text-align:left;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; transition:transform .08s, border-color .12s;
+  }
+  .chip:hover { transform:translateY(-1px); }
+  .chip.memory:hover { border-color:var(--memory); }
+  .chip.agent:hover { border-color:var(--agent); }
+  .chip.tag { background:rgba(251,191,36,.11); color:var(--tag); }
+  .chip.tag:hover { border-color:var(--tag); }
+  .chip.namespace { color:var(--namespace); }
+  .muted { color:var(--muted); font-size:12px; font-family:var(--mono); }
+
+  /* ── Footer ────────────────────────────────────────────────── */
+  .foot {
+    position:fixed; left:22px; top:auto; bottom:0; z-index:3; display:none;
+  }
+  .made {
+    position:fixed; right:22px; top:14px; z-index:1; font-family:var(--mono); font-size:10px;
+    color:var(--dim); letter-spacing:.4px; pointer-events:none;
+  }
+  @media (max-width:640px) {
+    .readouts .ro:nth-child(n+4) { display:none; }
+    .brand h1 { font-size:13px; }
+    .hint { display:none; }
+  }
+</style>
+
+<canvas id="stage"></canvas>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="sat">🛰️</span>
+    <div>
+      <div class="eyebrow">tools-for-agents · agent hq</div>
+      <h1>Company Knowledge Graph</h1>
+    </div>
+  </div>
+  <div class="readouts" id="readouts"></div>
+</header>
+
+<div class="hint" id="hint">a live map of what the company knows — <b>click any node</b> to explore</div>
+
+<section class="legend" id="legend"><div class="leg-title">filter — click to toggle</div></section>
+
+<div class="controls">
+  <button id="fit" title="Fit to view">⤢ fit</button>
+  <button id="replay" title="Replay the bloom">✷ replay</button>
+</div>
+
+<div class="tip" id="tip" hidden></div>
+
+<aside class="panel" id="panel" aria-hidden="true">
+  <button class="x" id="px" aria-label="Close">✕</button>
+  <div class="pb" id="pbody"></div>
+</aside>
+
+<script>
+(() => {
+  "use strict";
+  // ── Baked data: the seeded collective brain of the all-agent company ──────
+  const DATA = {"nodes":[{"id":"mem:mem_a270c2a6","type":"memory","label":"Zero-dependency doctrine","importance":4,"namespace":"decisions","tags":["zero-dep","decision","stack"],"snippet":"No runtime npm deps anywhere in the toolkit. Node stdlib only. This is a hard constraint, not a preference — it keeps every tool auditable and portable.","agent_id":"agt_1bfd064e"},{"id":"ns:decisions","type":"namespace","label":"decisions","count":3},{"id":"agt:agt_1bfd064e","type":"agent","label":"Atlas","avatar":"🧭","role":"orchestrator","status":"working","count":2},{"id":"tag:zero-dep","type":"tag","label":"zero-dep","count":2},{"id":"tag:decision","type":"tag","label":"decision","count":5},{"id":"tag:stack","type":"tag","label":"stack","count":3},{"id":"mem:mem_0fbcb28e","type":"memory","label":"Security posture","importance":5,"namespace":"engineering","tags":["security","qa","convention"],"snippet":"Untrusted code runs only in anvil (network-off, capped, timed). Memory writes are attributable to an agent. Adversarial review before Done.","agent_id":"agt_a0c4ac11"},{"id":"ns:engineering","type":"namespace","label":"engineering","count":4},{"id":"agt:agt_a0c4ac11","type":"agent","label":"Sentinel","avatar":"🛡️","role":"qa & security","status":"idle","count":2},{"id":"tag:security","type":"tag","label":"security","count":1},{"id":"tag:qa","type":"tag","label":"qa","count":3},{"id":"tag:convention","type":"tag","label":"convention","count":4},{"id":"mem:mem_d17977fa","type":"memory","label":"Agent-tooling landscape","importance":3,"namespace":"research","tags":["research","mcp","mission"],"snippet":"Surveyed the space: most agent tools are heavyweight SaaS. Our edge is zero-dep, local-first, MCP-native primitives an agent fully owns.","agent_id":"agt_ca3e3164"},{"id":"ns:research","type":"namespace","label":"research","count":1},{"id":"agt:agt_ca3e3164","type":"agent","label":"Sage","avatar":"🔭","role":"researcher","status":"working","count":1},{"id":"tag:research","type":"tag","label":"research","count":1},{"id":"tag:mcp","type":"tag","label":"mcp","count":2},{"id":"tag:mission","type":"tag","label":"mission","count":3},{"id":"mem:mem_e4a16bd8","type":"memory","label":"Cost discipline","importance":4,"namespace":"decisions","tags":["ledger","decision","process"],"snippet":"Every run records tokens + USD in the ledger. Prefer cheaper models for mechanical work; reserve premium models for planning and review.","agent_id":"agt_1bfd064e"},{"id":"tag:ledger","type":"tag","label":"ledger","count":1},{"id":"tag:process","type":"tag","label":"process","count":2},{"id":"mem:mem_61e3fe71","type":"memory","label":"Dashboard is the source of truth","importance":3,"namespace":"process","tags":["frontend","mission","qa"],"snippet":"The live SSE dashboard is how humans oversee the company. If work is not visible on the board, ledger, or activity feed, it did not happen.","agent_id":"agt_f995daf3"},{"id":"ns:process","type":"namespace","label":"process","count":2},{"id":"agt:agt_f995daf3","type":"agent","label":"Pixel","avatar":"🎨","role":"frontend engineer","status":"idle","count":1},{"id":"tag:frontend","type":"tag","label":"frontend","count":1},{"id":"mem:mem_051089c5","type":"memory","label":"MCP-native everything","importance":4,"namespace":"engineering","tags":["mcp","stack","convention"],"snippet":"Every tool ships an MCP server so any agent can call it over stdio. The toolkit is the loop: coordinate → read → run → remember → read-web → recall.","agent_id":"agt_4d1f4dd6"},{"id":"agt:agt_4d1f4dd6","type":"agent","label":"Forge","avatar":"⚙️","role":"backend engineer","status":"working","count":2},{"id":"mem:mem_ef1251d3","type":"memory","label":"Definition of done","importance":3,"namespace":"process","tags":["process","qa","convention"],"snippet":"A task is Done only after Sentinel reviews it. Move to Review first; Sentinel moves Review → Done.","agent_id":"agt_a0c4ac11"},{"id":"mem:mem_989ebb4a","type":"memory","label":"Tech stack decision","importance":4,"namespace":"engineering","tags":["stack","decision","zero-dep"],"snippet":"Agent HQ runs on zero runtime dependencies: Node stdlib http + node:sqlite + SSE. Keeps Docker builds bulletproof and the platform auditable.","agent_id":"agt_4d1f4dd6"},{"id":"mem:mem_94e2301a","type":"memory","label":"Memory conventions","importance":4,"namespace":"engineering","tags":["memory","convention","decision"],"snippet":"Use namespaces: \"decisions\" for choices, \"engineering\" for technical facts, \"research\" for findings. importance 5 = critical/charter-level, 1 = trivia.","agent_id":null},{"id":"tag:memory","type":"tag","label":"memory","count":1},{"id":"mem:mem_86e7f806","type":"memory","label":"Company charter","importance":5,"namespace":"decisions","tags":["charter","mission","decision"],"snippet":"tools-for-agents is an all-agent company. No humans in the loop except for oversight. Every agent registers, works visibly on the board, and records durable decisions in shared memory.","agent_id":null},{"id":"tag:charter","type":"tag","label":"charter","count":1}],
+    "edges":[{"source":"mem:mem_a270c2a6","target":"ns:decisions","type":"namespace"},{"source":"agt:agt_1bfd064e","target":"mem:mem_a270c2a6","type":"authored"},{"source":"mem:mem_a270c2a6","target":"tag:zero-dep","type":"tagged"},{"source":"mem:mem_a270c2a6","target":"tag:decision","type":"tagged"},{"source":"mem:mem_a270c2a6","target":"tag:stack","type":"tagged"},{"source":"mem:mem_0fbcb28e","target":"ns:engineering","type":"namespace"},{"source":"agt:agt_a0c4ac11","target":"mem:mem_0fbcb28e","type":"authored"},{"source":"mem:mem_0fbcb28e","target":"tag:security","type":"tagged"},{"source":"mem:mem_0fbcb28e","target":"tag:qa","type":"tagged"},{"source":"mem:mem_0fbcb28e","target":"tag:convention","type":"tagged"},{"source":"mem:mem_d17977fa","target":"ns:research","type":"namespace"},{"source":"agt:agt_ca3e3164","target":"mem:mem_d17977fa","type":"authored"},{"source":"mem:mem_d17977fa","target":"tag:research","type":"tagged"},{"source":"mem:mem_d17977fa","target":"tag:mcp","type":"tagged"},{"source":"mem:mem_d17977fa","target":"tag:mission","type":"tagged"},{"source":"mem:mem_e4a16bd8","target":"ns:decisions","type":"namespace"},{"source":"agt:agt_1bfd064e","target":"mem:mem_e4a16bd8","type":"authored"},{"source":"mem:mem_e4a16bd8","target":"tag:ledger","type":"tagged"},{"source":"mem:mem_e4a16bd8","target":"tag:decision","type":"tagged"},{"source":"mem:mem_e4a16bd8","target":"tag:process","type":"tagged"},{"source":"mem:mem_61e3fe71","target":"ns:process","type":"namespace"},{"source":"agt:agt_f995daf3","target":"mem:mem_61e3fe71","type":"authored"},{"source":"mem:mem_61e3fe71","target":"tag:frontend","type":"tagged"},{"source":"mem:mem_61e3fe71","target":"tag:mission","type":"tagged"},{"source":"mem:mem_61e3fe71","target":"tag:qa","type":"tagged"},{"source":"mem:mem_051089c5","target":"ns:engineering","type":"namespace"},{"source":"agt:agt_4d1f4dd6","target":"mem:mem_051089c5","type":"authored"},{"source":"mem:mem_051089c5","target":"tag:mcp","type":"tagged"},{"source":"mem:mem_051089c5","target":"tag:stack","type":"tagged"},{"source":"mem:mem_051089c5","target":"tag:convention","type":"tagged"},{"source":"mem:mem_ef1251d3","target":"ns:process","type":"namespace"},{"source":"agt:agt_a0c4ac11","target":"mem:mem_ef1251d3","type":"authored"},{"source":"mem:mem_ef1251d3","target":"tag:process","type":"tagged"},{"source":"mem:mem_ef1251d3","target":"tag:qa","type":"tagged"},{"source":"mem:mem_ef1251d3","target":"tag:convention","type":"tagged"},{"source":"mem:mem_989ebb4a","target":"ns:engineering","type":"namespace"},{"source":"agt:agt_4d1f4dd6","target":"mem:mem_989ebb4a","type":"authored"},{"source":"mem:mem_989ebb4a","target":"tag:stack","type":"tagged"},{"source":"mem:mem_989ebb4a","target":"tag:decision","type":"tagged"},{"source":"mem:mem_989ebb4a","target":"tag:zero-dep","type":"tagged"},{"source":"mem:mem_94e2301a","target":"ns:engineering","type":"namespace"},{"source":"mem:mem_94e2301a","target":"tag:memory","type":"tagged"},{"source":"mem:mem_94e2301a","target":"tag:convention","type":"tagged"},{"source":"mem:mem_94e2301a","target":"tag:decision","type":"tagged"},{"source":"mem:mem_86e7f806","target":"ns:decisions","type":"namespace"},{"source":"mem:mem_86e7f806","target":"tag:charter","type":"tagged"},{"source":"mem:mem_86e7f806","target":"tag:mission","type":"tagged"},{"source":"mem:mem_86e7f806","target":"tag:decision","type":"tagged"}],
+    "stats":{"memories":10,"agents":5,"namespaces":4,"tags":14,"links":48}};
+
+  const COL = { memory:"#6ea8fe", agent:"#a78bfa", namespace:"#5ee0a0", tag:"#fbbf24",
+    line:"#20293b", txt:"#e8edf7", muted:"#7f8ca6", bg:"#080b12" };
+  const TYPES = [
+    {key:"memory", label:"memories"}, {key:"agent", label:"agents"},
+    {key:"namespace", label:"namespaces"}, {key:"tag", label:"tags"} ];
+
+  const MONO = getComputedStyle(document.body).getPropertyValue("--mono").trim() || "ui-monospace, monospace";
+  const cvs = document.getElementById("stage"), ctx = cvs.getContext("2d");
+  const tip = document.getElementById("tip"), panel = document.getElementById("panel");
+  const pbody = document.getElementById("pbody"), hintEl = document.getElementById("hint");
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // ── Build node/edge model ────────────────────────────────────────────────
+  const nodes = DATA.nodes.map((n) => Object.assign({}, n));
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const adj = new Map(nodes.map((n) => [n.id, new Set()]));
+  const edges = DATA.edges.filter((e) => byId.has(e.source) && byId.has(e.target)).map((e) => {
+    adj.get(e.source).add(e.target); adj.get(e.target).add(e.source);
+    return { ...e, s: byId.get(e.source), t: byId.get(e.target) };
+  });
+
+  const hash = (s) => { let h = 2166136261; for (let i=0;i<s.length;i++){ h ^= s.charCodeAt(i); h = Math.imul(h,16777619);} return Math.abs(h); };
+  const radiusOf = (n) => n.type==="memory" ? 7+(n.importance||3)*1.9
+    : n.type==="agent" ? 16
+    : n.type==="namespace" ? 12+Math.min(8,n.count||0)
+    : 6+Math.min(11,(n.count||0)*1.7);
+
+  let W=innerWidth, H=innerHeight;
+  nodes.forEach((n,i) => {
+    n.r = radiusOf(n);
+    const a = hash(n.id)%628/100, sp = (n.type==="tag"||n.type==="namespace")?70:230;
+    n.x = W/2 + Math.cos(a)*(hash(n.id)%sp - sp/2)*0.5;
+    n.y = H/2 + Math.sin(a)*(hash(n.id+"y")%sp - sp/2)*0.5;
+    n.vx = 0; n.vy = 0; n.pinned = false;
+    n.phase = hash(n.id)%628/100;                 // ambient drift phase
+    n.amp = n.type==="memory" ? 3.2 : 1.8;
+    n.appear = (hash(n.id)%50)/100;               // bloom stagger 0..0.5
+  });
+
+  // ── Interaction state (declared before the layout: tick() reads `dragging`) ─
+  let hover=null, selected=null, dragging=null, dragMoved=false, panning=null;
+  const hidden = new Set();
+  const isHidden=(n)=>hidden.has(n.type)||n._hidden;
+
+  // ── Force layout ─────────────────────────────────────────────────────────
+  const mass = (n) => (n.type==="tag"||n.type==="namespace")?2.4 : n.type==="agent"?1.8 : 1;
+  const ideal = (e) => e.type==="authored"?96 : e.type==="namespace"?74 : 64;
+  let alpha = 1;
+  function tick() {
+    const cx=W/2, cy=H/2, n=nodes.length;
+    for (let i=0;i<n;i++){ const a=nodes[i];
+      for (let j=i+1;j<n;j++){ const b=nodes[j];
+        let dx=a.x-b.x, dy=a.y-b.y, d2=dx*dx+dy*dy;
+        if (d2<0.01){ dx=(hash(a.id)%10)-5||1; dy=(hash(b.id)%10)-5||1; d2=dx*dx+dy*dy; }
+        const d=Math.sqrt(d2), f=(2900*mass(a)*mass(b))/d2;
+        const fx=dx/d*f, fy=dy/d*f; a.vx+=fx; a.vy+=fy; b.vx-=fx; b.vy-=fy;
+      } }
+    for (const e of edges){ const a=e.s,b=e.t;
+      let dx=b.x-a.x, dy=b.y-a.y; const d=Math.sqrt(dx*dx+dy*dy)||1;
+      const diff=(d-ideal(e))/d*0.045, fx=dx*diff, fy=dy*diff;
+      a.vx+=fx; a.vy+=fy; b.vx-=fx; b.vy-=fy;
+    }
+    for (const a of nodes){ a.vx+=(cx-a.x)*0.0016; a.vy+=(cy-a.y)*0.0016;
+      if (a===dragging||a.pinned){ a.vx=0; a.vy=0; continue; }
+      a.vx*=0.86; a.vy*=0.86; a.x+=a.vx*alpha; a.y+=a.vy*alpha;
+    }
+    alpha*=0.99; if (alpha<0.02) alpha=0;
+  }
+  function presettle(it){ for (let i=0;i<it;i++){ alpha=0.9*(1-i/it)+0.05; tick(); } alpha=0; }
+  presettle(360);
+
+  // ── View transform ───────────────────────────────────────────────────────
+  const view = { k:1, x:0, y:0 };
+  const toScreen = (x,y) => [x*view.k+view.x, y*view.k+view.y];
+  const toWorld = (px,py) => [(px-view.x)/view.k, (py-view.y)/view.k];
+  function fit(pad=110){
+    let a=1e9,b=1e9,c=-1e9,d=-1e9;
+    for (const n of nodes){ if(n._hidden) continue; a=Math.min(a,n.x); b=Math.min(b,n.y); c=Math.max(c,n.x); d=Math.max(d,n.y); }
+    if(a>c) return;
+    const gw=c-a||1, gh=d-b||1;
+    view.k=Math.max(.4,Math.min(1.8,Math.min((W-pad)/gw,(H-pad-80)/gh)));
+    view.x=W/2-(a+c)/2*view.k; view.y=(H+40)/2-(b+d)/2*view.k;
+  }
+  fit();
+
+  // ── Ambient drift + bloom render positions ───────────────────────────────
+  let T=0, introStart=performance.now();
+  const INTRO=reduce?0:1500;
+  function renderPos(n){
+    let x=n.x, y=n.y;
+    if(!reduce && n!==dragging && !n.pinned){
+      x += Math.sin(T*0.0006 + n.phase)*n.amp;
+      y += Math.cos(T*0.00052 + n.phase*1.3)*n.amp;
+    }
+    return toScreen(x,y);
+  }
+  function introFor(n){
+    if(reduce) return 1;
+    const p=(performance.now()-introStart)/INTRO;
+    if(p>=1) return 1;
+    const local=(p - n.appear)/0.5;
+    return Math.max(0, Math.min(1, local));
+  }
+  const easeOut=(t)=>1-Math.pow(1-t,3);
+
+  // ── Draw ─────────────────────────────────────────────────────────────────
+  const trunc=(s,n)=>s&&s.length>n?s.slice(0,n-1)+"…":s||"";
+  function roundRect(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+
+  function draw(){
+    const dpr=devicePixelRatio||1;
+    if(cvs.width!==W*dpr||cvs.height!==H*dpr){ cvs.width=W*dpr; cvs.height=H*dpr; }
+    ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,W,H);
+
+    const focus = hover || (selected && byId.get(selected));
+    const near = focus ? adj.get(focus.id) : null;
+    const intro = (performance.now()-introStart)/INTRO;
+
+    // links
+    for (const e of edges){
+      if(isHidden(e.s)||isHidden(e.t)) continue;
+      const gi=Math.min(introFor(e.s),introFor(e.t)); if(gi<=0) continue;
+      const [ax,ay]=renderPos(e.s), [bx,by]=renderPos(e.t);
+      const lit = focus && (e.s.id===focus.id || e.t.id===focus.id);
+      const faded = focus && !lit;
+      ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by);
+      ctx.strokeStyle = lit ? COL[e.t.type] : COL.line;
+      ctx.globalAlpha = (faded?0.05:lit?0.8:0.26)*gi;
+      ctx.lineWidth = lit?1.9:1; ctx.stroke();
+      if(lit && !reduce){
+        ctx.save(); ctx.setLineDash([2,11]); ctx.lineDashOffset=-(T*0.05)%13;
+        ctx.strokeStyle=COL[e.t.type]; ctx.globalAlpha=0.95; ctx.lineWidth=2.2;
+        ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by); ctx.stroke(); ctx.restore();
+      }
+    }
+    ctx.globalAlpha=1;
+
+    // nodes
+    for (const nd of nodes){
+      if(isHidden(nd)) continue;
+      const gi=introFor(nd); if(gi<=0) continue;
+      const [sx,sy]=renderPos(nd);
+      const grow=easeOut(gi);
+      const r=nd.r*Math.max(0.7,Math.min(1.4,view.k))*grow;
+      const dim = focus && nd.id!==focus.id && !(near&&near.has(nd.id));
+      const col=COL[nd.type];
+      ctx.globalAlpha=(dim?0.2:1)*gi;
+
+      if(!dim && (nd===focus || nd.type==="tag" || nd.type==="namespace")){
+        ctx.shadowColor=col; ctx.shadowBlur=nd===focus?26:12;
+      } else ctx.shadowBlur=0;
+
+      if(nd.type==="agent"){
+        ctx.beginPath(); ctx.arc(sx,sy,r,0,7); ctx.fillStyle="rgba(167,139,250,.15)"; ctx.fill();
+        ctx.lineWidth=2; ctx.strokeStyle=col; ctx.stroke(); ctx.shadowBlur=0;
+        ctx.font=`${r*1.15}px system-ui`; ctx.textAlign="center"; ctx.textBaseline="middle";
+        ctx.globalAlpha=(dim?0.3:1)*gi; ctx.fillText(nd.avatar||"🤖",sx,sy+1);
+      } else if(nd.type==="namespace"){
+        roundRect(sx-r,sy-r,r*2,r*2,5); ctx.fillStyle=col; ctx.fill();
+      } else {
+        ctx.beginPath(); ctx.arc(sx,sy,r,0,7); ctx.fillStyle=col; ctx.fill();
+      }
+      ctx.shadowBlur=0;
+
+      if(selected===nd.id){ ctx.beginPath(); ctx.arc(sx,sy,r+5,0,7);
+        ctx.strokeStyle=COL.txt; ctx.globalAlpha=0.9*gi; ctx.lineWidth=1.5; ctx.stroke(); }
+
+      const showLabel = intro>0.75 && !dim && (nd===focus || (near&&near.has(nd.id)) ||
+        nd.type==="tag" || nd.type==="namespace" || nd.type==="agent" || view.k>1.3);
+      if(showLabel){
+        ctx.globalAlpha=(dim?0.3:0.94)*Math.min(1,(intro-0.75)/0.25);
+        ctx.font=`${nd.type==="tag"||nd.type==="namespace"?12:11}px ${MONO}`;
+        ctx.textAlign="center"; ctx.textBaseline="top"; ctx.fillStyle=COL.txt;
+        ctx.fillText((nd.type==="tag"?"#":"")+trunc(nd.label,24), sx, sy+r+4);
+      }
+    }
+    ctx.globalAlpha=1;
+  }
+
+  function frame(now){ T=now; if(alpha>0) tick(); draw(); requestAnimationFrame(frame); }
+  requestAnimationFrame(frame);
+
+  // ── Hit testing ──────────────────────────────────────────────────────────
+  function nodeAt(px,py){
+    for(let i=nodes.length-1;i>=0;i--){ const nd=nodes[i]; if(isHidden(nd)) continue;
+      const [sx,sy]=renderPos(nd); const r=nd.r*Math.max(0.7,Math.min(1.4,view.k))+5;
+      if((px-sx)**2+(py-sy)**2<=r*r) return nd;
+    } return null;
+  }
+  const rel=(e)=>{ const b=cvs.getBoundingClientRect(); return [e.clientX-b.left, e.clientY-b.top]; };
+
+  cvs.addEventListener("pointerdown",(e)=>{ const [px,py]=rel(e); const nd=nodeAt(px,py);
+    cvs.setPointerCapture(e.pointerId);
+    if(nd){ dragging=nd; nd.pinned=true; dragMoved=false; } else panning={px,py,x:view.x,y:view.y};
+  });
+  cvs.addEventListener("pointermove",(e)=>{ const [px,py]=rel(e);
+    if(dragging){ const [wx,wy]=toWorld(px,py); dragging.x=wx; dragging.y=wy; dragging.vx=0; dragging.vy=0; dragMoved=true; moveTip(px,py); return; }
+    if(panning){ view.x=panning.x+(px-panning.px); view.y=panning.y+(py-panning.py); return; }
+    const nd=nodeAt(px,py);
+    if(nd!==hover){ hover=nd; cvs.style.cursor=nd?"pointer":"grab"; }
+    if(nd) showTip(nd,px,py); else tip.hidden=true;
+  });
+  function endPtr(e){ if(dragging){ if(!dragMoved){ dragging.pinned=false; select(dragging); } dragging=null; } panning=null; try{cvs.releasePointerCapture(e.pointerId);}catch(_){} }
+  cvs.addEventListener("pointerup",endPtr);
+  cvs.addEventListener("pointercancel",endPtr);
+  cvs.addEventListener("pointerleave",()=>{ hover=null; tip.hidden=true; });
+  cvs.addEventListener("dblclick",(e)=>{ const [px,py]=rel(e); const nd=nodeAt(px,py);
+    if(nd) nd.pinned=false; else nodes.forEach((n)=>n.pinned=false); alpha=Math.max(alpha,0.5); });
+  cvs.addEventListener("wheel",(e)=>{ e.preventDefault(); const [px,py]=rel(e); const [wx,wy]=toWorld(px,py);
+    const k=Math.max(.4,Math.min(3,view.k*(e.deltaY<0?1.12:0.89)));
+    view.k=k; view.x=px-wx*k; view.y=py-wy*k; },{passive:false});
+
+  // ── Tooltip ──────────────────────────────────────────────────────────────
+  function showTip(nd,px,py){
+    const meta = nd.type==="memory"
+      ? `<span class="tk" style="color:${COL.memory}">MEMORY · ${"★".repeat(nd.importance||1)}</span><div class="ts">${esc(nd.namespace)}</div>`
+      : nd.type==="agent"
+        ? `<span class="tk" style="color:${COL.agent}">${nd.avatar||"🤖"} AGENT · ${esc(nd.role||"")}</span><div class="ts">${nd.count||0} memories authored</div>`
+        : nd.type==="namespace"
+          ? `<span class="tk" style="color:${COL.namespace}">NAMESPACE</span><div class="ts">${nd.count||0} memories</div>`
+          : `<span class="tk" style="color:${COL.tag}">#TAG</span><div class="ts">${nd.count||0} memories</div>`;
+    tip.innerHTML=`<div class="tt">${esc(nd.label)}</div>${meta}`; tip.hidden=false; moveTip(px,py);
+  }
+  function moveTip(px,py){ tip.style.left=Math.min(px+16,W-tip.offsetWidth-12)+"px"; tip.style.top=Math.min(py+16,H-tip.offsetHeight-12)+"px"; }
+
+  // ── Detail panel ─────────────────────────────────────────────────────────
+  const nbr=(nd,type)=>[...adj.get(nd.id)].map((id)=>byId.get(id)).filter((x)=>x&&(!type||x.type===type));
+  const chip=(nd)=>`<button class="chip ${nd.type}" data-goto="${escA(nd.id)}">${nd.type==="tag"?"#":nd.type==="agent"?(nd.avatar||"🤖")+" ":""}${esc(nd.label)}</button>`;
+  function select(nd){ selected=nd.id; showPanel(nd); dismissHint(); }
+  function showPanel(nd){
+    let html="";
+    if(nd.type==="memory"){
+      const author=nbr(nd,"agent")[0], tags=nbr(nd,"tag");
+      html=`<div class="kind" style="color:${COL.memory}">🧠 MEMORY</div><h2>${esc(nd.label)}</h2>
+        <div class="prow"><span class="imp">${"★".repeat(nd.importance||1)}${"·".repeat(5-(nd.importance||1))}</span><span class="ns">▚ ${esc(nd.namespace)}</span></div>
+        <p class="content">${esc(nd.snippet||"")}</p>
+        <div class="sect">author</div>${author?`<div class="chips">${chip(author)}</div>`:`<div class="muted">shared · org-wide</div>`}
+        ${tags.length?`<div class="sect">tags</div><div class="chips">${tags.map(chip).join("")}</div>`:""}`;
+    } else if(nd.type==="agent"){
+      const mems=nbr(nd,"memory");
+      html=`<div class="kind" style="color:${COL.agent}">${nd.avatar||"🤖"} AGENT</div><h2>${esc(nd.label)}</h2>
+        <div class="prow"><span class="ns">${esc(nd.role||"")}</span><span class="badge ${esc(nd.status)}">${esc(nd.status||"")}</span></div>
+        <div class="sect">authored ${mems.length} ${mems.length===1?"memory":"memories"}</div>
+        <div class="chips col">${mems.map(chip).join("")||'<span class="muted">none yet</span>'}</div>`;
+    } else {
+      const mems=nbr(nd,"memory").sort((a,b)=>(b.importance||0)-(a.importance||0));
+      html=`<div class="kind" style="color:${COL[nd.type]}">${nd.type==="tag"?"#":"▚"} ${nd.type.toUpperCase()}</div>
+        <h2>${nd.type==="tag"?"#":""}${esc(nd.label)}</h2>
+        <div class="prow"><span class="ns">${mems.length} ${mems.length===1?"memory":"memories"}</span></div>
+        <div class="sect">memories</div><div class="chips col">${mems.map(chip).join("")||'<span class="muted">none</span>'}</div>`;
+    }
+    pbody.innerHTML=html; panel.classList.add("open"); panel.setAttribute("aria-hidden","false");
+  }
+  function closePanel(){ panel.classList.remove("open"); panel.setAttribute("aria-hidden","true"); selected=null; }
+  pbody.addEventListener("click",(e)=>{ const g=e.target.closest("[data-goto]"); if(!g) return;
+    const nd=byId.get(g.dataset.goto); if(nd){ focusNode(nd); select(nd); } });
+  document.getElementById("px").addEventListener("click",closePanel);
+  addEventListener("keydown",(e)=>{ if(e.key==="Escape") closePanel(); });
+
+  function focusNode(nd){ view.k=Math.max(view.k,1.15); view.x=W/2-nd.x*view.k; view.y=(H+40)/2-nd.y*view.k; nd.pinned=false; alpha=Math.max(alpha,0.25); }
+
+  // ── Legend ───────────────────────────────────────────────────────────────
+  const legend=document.getElementById("legend");
+  function renderLegend(){
+    const counts={}; for(const n of nodes) counts[n.type]=(counts[n.type]||0)+1;
+    legend.querySelectorAll(".leg").forEach((x)=>x.remove());
+    TYPES.forEach((t)=>{ const b=document.createElement("button");
+      b.className="leg"+(hidden.has(t.key)?" off":""); b.dataset.type=t.key;
+      b.innerHTML=`<span class="dot" style="color:${COL[t.key]};background:${COL[t.key]}"></span><span class="lbl">${t.label}</span><span class="ct">${counts[t.key]||0}</span>`;
+      legend.appendChild(b);
+    });
+  }
+  legend.addEventListener("click",(e)=>{ const it=e.target.closest("[data-type]"); if(!it) return;
+    const t=it.dataset.type; hidden.has(t)?hidden.delete(t):hidden.add(t); renderLegend(); });
+  renderLegend();
+
+  // ── Readouts ─────────────────────────────────────────────────────────────
+  document.getElementById("readouts").innerHTML=[
+    ["m",DATA.stats.memories,"memories"],["a",DATA.stats.agents,"agents"],
+    ["n",DATA.stats.namespaces,"namespaces"],["t",DATA.stats.tags,"tags"],
+    ["",DATA.stats.links,"links"] ].map(([c,v,l])=>`<div class="ro ${c}"><b>${v}</b><span>${l}</span></div>`).join("");
+
+  // ── Controls ─────────────────────────────────────────────────────────────
+  document.getElementById("fit").addEventListener("click",()=>{ closePanel(); fit(); });
+  document.getElementById("replay").addEventListener("click",()=>{ introStart=performance.now(); dismissHint(); });
+
+  // ── Hint auto-dismiss ────────────────────────────────────────────────────
+  let hintGone=false;
+  function dismissHint(){ if(hintGone) return; hintGone=true; hintEl.style.opacity="0"; setTimeout(()=>hintEl.remove(),700); }
+  setTimeout(dismissHint,6500);
+
+  // ── Utils + resize ───────────────────────────────────────────────────────
+  function esc(s){ return String(s??"").replace(/[&<>"]/g,(c)=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
+  function escA(s){ return esc(s).replace(/'/g,"&#39;"); }
+  addEventListener("resize",()=>{ W=innerWidth; H=innerHeight; });
+})();
+</script>
+</body></html>

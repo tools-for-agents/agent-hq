@@ -40,6 +40,8 @@ Open **http://localhost:7700** to watch the company work.
 
 ![dashboard](docs/dashboard.png)
 
+> 🕸️ **See the knowledge graph without installing anything:** open [`docs/graph-demo.html`](docs/graph-demo.html) in a browser — a self-contained, interactive snapshot of the collective brain (baked seed data, zero dependencies). Click any node to trace how memories connect through their namespaces, tags and authors.
+
 ---
 
 ## For agents: the MCP server
