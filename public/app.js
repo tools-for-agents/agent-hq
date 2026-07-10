@@ -160,6 +160,28 @@ $('#tm-body').addEventListener('click', (e) => {
 const fmtTok = (n) => n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n || 0);
 const usd = (n) => '$' + (n || 0).toFixed(4);
 
+// Cumulative-spend sparkline: accumulate the chronological per-run costs into a
+// rising area chart, with an emphasized endpoint marking the current total.
+function spendSparkline(series, total) {
+  const pts = (series || []).filter((s) => s && s.cost_usd != null);
+  if (pts.length < 2 || total <= 0) return '';        // need a couple of runs to show a trend
+  let cum = 0; const cums = pts.map((s) => (cum += s.cost_usd));
+  const n = cums.length, max = cums[n - 1] || 1;
+  const xy = cums.map((c, i) => [(i / (n - 1)) * 100, (1 - c / max) * 100]);
+  const line = xy.map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(' ');
+  const area = `M0,100 L ${xy.map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(' L ')} L100,100 Z`;
+  return `<div class="ledger-spark">
+    <div class="ls-head"><span>cumulative spend</span><span class="ls-now">${usd(max)} over ${n} runs</span></div>
+    <div class="ls-chart">
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        <path class="ls-area" d="${area}" />
+        <polyline class="ls-line" points="${line}" />
+      </svg>
+      <span class="ls-dot" style="top:${xy[n - 1][1].toFixed(2)}%"></span>
+    </div>
+  </div>`;
+}
+
 async function renderLedger() {
   const l = await api('/ledger');
   const runs = await api('/runs?limit=40');
@@ -172,6 +194,7 @@ async function renderLedger() {
       <div class="lt"><b>${fmtTok(l.total_output_tokens)}</b><span>output</span></div>
       <div class="lt"><b>${l.total_runs}</b><span>runs</span></div>
     </div>
+    ${spendSparkline(l.spend_series, l.total_cost_usd || 0)}
     <h3 class="lh">Spend by agent</h3>
     <div class="ledger-agents">
       ${l.by_agent.length ? l.by_agent.map((a) => `

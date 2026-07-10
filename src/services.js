@@ -434,6 +434,10 @@ export const Ledger = {
       GROUP BY r.agent_id ORDER BY cost_usd DESC`);
     const byModel = all(`SELECT COALESCE(model,'unknown') model, COUNT(*) runs,
         COALESCE(SUM(cost_usd),0) cost_usd FROM runs GROUP BY model ORDER BY cost_usd DESC`);
+    // Chronological per-run spend — the dashboard accumulates it into a sparkline.
+    const spendSeries = all(`SELECT started_at, COALESCE(cost_usd,0) cost_usd,
+        (COALESCE(input_tokens,0)+COALESCE(output_tokens,0)) tokens
+      FROM runs WHERE started_at IS NOT NULL ORDER BY started_at ASC LIMIT 300`);
     return {
       total_runs: totals.runs,
       total_tokens: totals.input_tokens + totals.output_tokens,
@@ -442,6 +446,7 @@ export const Ledger = {
       total_cost_usd: Math.round(totals.cost_usd * 1e6) / 1e6,
       by_agent: byAgent,
       by_model: byModel,
+      spend_series: spendSeries,
       prices: priceTable(),
     };
   },

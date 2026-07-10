@@ -11,7 +11,7 @@ const work = mkdtempSync(join(tmpdir(), 'hq-test-'));
 process.env.HQ_DB_PATH = join(work, 'hq.db');
 process.on('exit', () => { try { rmSync(work, { recursive: true, force: true }); } catch {} });
 
-const { Boards, Tasks, Memory, Agents, Graph, Activity, Messages } = await import('../src/services.js');
+const { Boards, Tasks, Memory, Agents, Graph, Activity, Messages, Ledger } = await import('../src/services.js');
 const newBoard = () => Boards.create({ name: 'Test board' }).id;
 
 test('ensureDefault provides a board with the standard columns', () => {
@@ -162,4 +162,19 @@ test('messages: compose send posts a directed message, and a null recipient is a
 
   // an empty body is rejected (the form guards this client-side too)
   assert.throws(() => Messages.send({ from_agent: gus.id, body: '' }), /body required/);
+});
+
+test('ledger: summary exposes a chronological spend series (drives the sparkline)', () => {
+  const gil = Agents.register({ name: 'Gil-ledger', role: 'r', avatar: '💠' });
+  Ledger.record({ agent_id: gil.id, label: 'plan', model: 'claude-haiku-4-5-20251001', input_tokens: 100, output_tokens: 50, cost_usd: 0.01 });
+  Ledger.record({ agent_id: gil.id, label: 'build', model: 'claude-haiku-4-5-20251001', input_tokens: 200, output_tokens: 80, cost_usd: 0.02 });
+
+  const s = Ledger.summary();
+  assert.ok(Array.isArray(s.spend_series), 'summary carries a spend_series array');
+  assert.ok(s.spend_series.length >= 2, 'the recorded runs appear in the series');
+  const ts = s.spend_series.map((x) => new Date(x.started_at).getTime());
+  assert.deepEqual(ts, [...ts].sort((a, b) => a - b), 'the series is in chronological order');
+  // the sparkline's cumulative endpoint must equal the reported total spend
+  const cum = s.spend_series.reduce((a, x) => a + x.cost_usd, 0);
+  assert.ok(Math.abs(cum - s.total_cost_usd) < 1e-9, 'the cumulative series sums to total spend');
 });

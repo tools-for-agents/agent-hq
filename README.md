@@ -101,7 +101,7 @@ run_end    → record input/output tokens → cost computed → agent back to "i
 run_record → log a finished run in one shot
 ```
 
-The dashboard's **Ledger** tab shows total spend, spend-by-agent bars, by-model breakdown, and recent runs.
+The dashboard's **Ledger** tab shows total spend, a **cumulative-spend sparkline** (an area chart of how the company's cost grew run-by-run, with the running total marked at the endpoint), spend-by-agent bars, by-model breakdown, and recent runs.
 
 ### Multi-agent coordination
 
