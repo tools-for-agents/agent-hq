@@ -145,6 +145,25 @@ test('activity: recent can filter to one agent\'s timeline', () => {
   assert.ok(all.length > mine.length, 'unfiltered returns more than one agent\'s slice');
 });
 
+test('activity: recent can filter to one category (the type-filter chips)', () => {
+  const def = Boards.ensureDefault();
+  const t = Tasks.create({ board_id: def.id, column: def.columns[0].name, title: 'Categorised task', created_by: null });
+  Tasks.comment(t.id, { author: null, body: 'a comment' });          // → task.comment
+  const gk = Agents.register({ name: 'Gekko-cat', role: 'r', avatar: '🦎' });
+  Memory.write({ agent_id: gk.id, title: 'Cat memo', content: 'x', namespace: 'n' });  // → memory.write
+
+  const tasks = Activity.recent({ type: 'task' });
+  assert.ok(tasks.length >= 1, 'there is task activity');
+  assert.ok(tasks.every((a) => a.type.startsWith('task.')), 'only task.* events are returned');
+  assert.ok(!tasks.some((a) => a.type.startsWith('memory.')), 'memory events do not leak into the task category');
+
+  const mem = Activity.recent({ type: 'memory' });
+  assert.ok(mem.some((a) => a.type === 'memory.write'), 'the memory category surfaces memory.write');
+
+  // a non-numeric limit (from ?limit=abc) must not empty or error the feed
+  assert.equal(Activity.recent({ limit: 'abc' }).length, Activity.recent({}).length, 'bad limit falls back to the default');
+});
+
 test('messages: compose send posts a directed message, and a null recipient is a broadcast (the compose-bar contract)', () => {
   const gus = Agents.register({ name: 'Gus-compose', role: 'r', avatar: '🧑' });
   const pam = Agents.register({ name: 'Pam-compose', role: 'r', avatar: '👩' });

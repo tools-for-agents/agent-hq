@@ -13,6 +13,7 @@ const ago = (iso) => {
 let AGENTS = {};
 let TASK_INDEX = {};        // task id → { title, column } (built from the board; resolves deps + status)
 let activityActor = null;   // Activity tab: null = all agents, else an agent id
+let activityType = null;    // Activity tab: null = all categories, else task|memory|message|run|agent
 
 // ── Tabs (deep-linkable via #hash) ──────────────────────────────────────────
 function activateTab(view) {
@@ -357,21 +358,37 @@ function renderActivityFilter() {
   $('#act-filter').innerHTML =
     `<button class="actf${!activityActor ? ' on' : ''}" data-actor="">📡 all</button>` +
     agents.map((a) => `<button class="actf${activityActor === a.id ? ' on' : ''}" data-actor="${esc(a.id)}">${a.avatar || '🤖'} ${esc(a.name)}</button>`).join('');
+  renderActivityTypeFilter();
+}
+// Activity categories — the event types are `category.action`, so a category is
+// the part before the dot (task.created → task).
+const ACT_CATS = [['task', '📋 tasks'], ['memory', '🧠 memory'], ['message', '✉️ messages'], ['run', '🧾 runs'], ['agent', '🤖 agents']];
+const catOf = (t) => String(t || '').split('.')[0];
+function renderActivityTypeFilter() {
+  $('#act-type-filter').innerHTML =
+    `<button class="actf${!activityType ? ' on' : ''} type-chip" data-type="">🗂️ all</button>` +
+    ACT_CATS.map(([k, label]) => `<button class="actf${activityType === k ? ' on' : ''} type-chip" data-type="${k}">${label}</button>`).join('');
 }
 document.addEventListener('click', (e) => {
+  const at = e.target.closest('#act-type-filter [data-type]');
+  if (at) { activityType = at.dataset.type || null; renderActivityTypeFilter(); renderActivity(); return; }
   const b = e.target.closest('#act-filter [data-actor]'); if (!b) return;
   activityActor = b.dataset.actor || null;
   renderActivityFilter(); renderActivity();
 });
 
 async function renderActivity() {
-  const full = await api('/activity?limit=80' + (activityActor ? '&actor=' + encodeURIComponent(activityActor) : ''));
+  const full = await api('/activity?limit=80' +
+    (activityActor ? '&actor=' + encodeURIComponent(activityActor) : '') +
+    (activityType ? '&type=' + encodeURIComponent(activityType) : ''));
   const who = activityActor ? AGENTS[activityActor] : null;
-  $('#activity-full').innerHTML =
-    (who ? `<li class="act-head">${full.length} event${full.length === 1 ? '' : 's'} by ${who.avatar || '🤖'} ${esc(who.name)}</li>` : '') +
-    (full.length ? full.map((a) => feedItem(a)).join('') : '<li class="act-empty">No activity yet.</li>');
-  // the sidebar ticker always shows the whole company's live feed
-  const mini = activityActor ? await api('/activity?limit=30') : full;
+  const head = (activityType || who)
+    ? `<li class="act-head">${full.length} ${activityType ? esc(activityType) + ' ' : ''}event${full.length === 1 ? '' : 's'}${who ? ` by ${who.avatar || '🤖'} ${esc(who.name)}` : ''}</li>`
+    : '';
+  $('#activity-full').innerHTML = head +
+    (full.length ? full.map((a) => feedItem(a)).join('') : '<li class="act-empty">Nothing here yet.</li>');
+  // the sidebar ticker always shows the whole company's live feed (unfiltered)
+  const mini = (activityActor || activityType) ? await api('/activity?limit=30') : full;
   $('#activity-mini').innerHTML = mini.slice(0, 30).map((a) => feedItem(a)).join('');
 }
 
@@ -396,7 +413,8 @@ function connect() {
   es.addEventListener('activity', (e) => {
     const a = JSON.parse(e.data);
     $('#activity-mini').insertAdjacentHTML('afterbegin', feedItem(a, true));
-    if (!activityActor || a.actor === activityActor) $('#activity-full').insertAdjacentHTML('afterbegin', feedItem(a, true));
+    if ((!activityActor || a.actor === activityActor) && (!activityType || catOf(a.type) === activityType))
+      $('#activity-full').insertAdjacentHTML('afterbegin', feedItem(a, true));
   });
   es.onerror = () => { $('#conn').classList.remove('live'); $('#conn-label').textContent = 'reconnecting…'; };
 }

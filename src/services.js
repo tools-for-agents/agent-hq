@@ -454,12 +454,18 @@ export const Ledger = {
 
 // ── Activity / Stats ─────────────────────────────────────────────────────────
 export const Activity = {
-  // Recent activity, newest first. Pass `actor` to see one agent's timeline.
-  recent({ limit = 80, actor } = {}) {
+  // Recent activity, newest first. Pass `actor` to see one agent's timeline, and
+  // `type` to see one category (task / memory / message / run / agent) — the event
+  // types are `category.action`, so a category matches `type LIKE 'category.%'`.
+  recent({ limit = 80, actor, type } = {}) {
+    limit = Number.isFinite(+limit) && +limit > 0 ? Math.min(Math.floor(+limit), 500) : 80;
     let sql = `SELECT * FROM activity`;
     const args = [];
-    if (actor) { sql += ` WHERE actor = ?`; args.push(actor); }
-    sql += ` ORDER BY ts DESC LIMIT ?`; args.push(Math.min(limit, 500));
+    const where = [];
+    if (actor) { where.push(`actor = ?`); args.push(actor); }
+    if (type) { where.push(`type LIKE ?`); args.push(type + '.%'); }
+    if (where.length) sql += ` WHERE ` + where.join(' AND ');
+    sql += ` ORDER BY ts DESC LIMIT ?`; args.push(limit);
     return all(sql, ...args).map((a) => { try { a.data = a.data ? JSON.parse(a.data) : null; } catch {} return a; });
   },
 };
