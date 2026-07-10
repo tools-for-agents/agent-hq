@@ -11,6 +11,7 @@ const ago = (iso) => {
 };
 
 let AGENTS = {};
+let TASK_INDEX = {};        // task id → { title, column } (built from the board; resolves deps + status)
 let activityActor = null;   // Activity tab: null = all agents, else an agent id
 
 // ── Tabs (deep-linkable via #hash) ──────────────────────────────────────────
@@ -46,6 +47,8 @@ async function renderStats() {
 
 async function renderBoard() {
   const b = await api('/board');
+  TASK_INDEX = {};
+  for (const col of b.columns) for (const t of col.tasks) TASK_INDEX[t.id] = { title: t.title, column: col.name };
   $('#board').innerHTML = b.columns.map((col) => `
     <div class="column">
       <h3>${esc(col.name)} <span class="count">${col.tasks.length}</span></h3>
@@ -59,7 +62,7 @@ function card(t) {
   const a = AGENTS[t.assignee];
   const labels = (t.labels || []).map((l) => `<span class="label">${esc(l)}</span>`).join('');
   const leased = t.lease_until && new Date(t.lease_until) > new Date();
-  return `<div class="card p-${esc(t.priority)}${leased ? ' claimed' : ''}">
+  return `<div class="card p-${esc(t.priority)}${leased ? ' claimed' : ''}" data-task="${esc(t.id)}" role="button" tabindex="0" title="View task details">
     <div class="title">${leased ? '🔒 ' : ''}${esc(t.title)}</div>
     <div class="meta">
       ${a ? `<span class="chip assignee">${a.avatar} ${esc(a.name)}</span>` : ''}
@@ -68,6 +71,52 @@ function card(t) {
     </div>
   </div>`;
 }
+
+// ── Task-detail modal ───────────────────────────────────────────────────────
+async function openTask(id) {
+  const t = await api('/tasks/' + encodeURIComponent(id));
+  if (!t || t.error) return;
+  renderTaskModal(t);
+  $('#task-modal').hidden = false;
+}
+function closeTask() { $('#task-modal').hidden = true; }
+function renderTaskModal(t) {
+  const a = AGENTS[t.assignee];
+  const status = TASK_INDEX[t.id]?.column;
+  const pri = esc(t.priority || 'medium');
+  const pills = [
+    `<span class="tm-pill pri-${pri}"><span class="pd"></span>${pri}</span>`,
+    status ? `<span class="tm-pill">${esc(status)}</span>` : '',
+    a ? `<span class="tm-pill assignee">${a.avatar} ${esc(a.name)}</span>` : `<span class="tm-pill">unassigned</span>`,
+    ...(t.labels || []).map((l) => `<span class="tm-pill">${esc(l)}</span>`),
+  ].filter(Boolean).join('');
+  const deps = (t.deps || []).map((d) => {
+    const info = TASK_INDEX[d];
+    return `<div class="tm-dep" data-task="${esc(d)}"><span class="dep-mark">🔗</span>${esc(info ? info.title : d)}${info && info.column ? ` <span style="color:var(--muted)">· ${esc(info.column)}</span>` : ''}</div>`;
+  }).join('');
+  const comments = (t.comments || []).map((c) => {
+    const ca = AGENTS[c.author];
+    return `<div class="tm-cm"><div class="cm-h"><span class="cm-a">${ca ? ca.avatar + ' ' + esc(ca.name) : esc(c.author || 'someone')}</span><span>${ago(c.created_at)} ago</span></div><div class="cm-b">${esc(c.body)}</div></div>`;
+  }).join('');
+  $('#tm-body').innerHTML = `
+    <h3 class="tm-h" id="tm-title">${esc(t.title)}</h3>
+    <div class="tm-pills">${pills}</div>
+    <div class="tm-sec"><h4>Description</h4><div class="tm-desc${t.description ? '' : ' empty'}">${t.description ? esc(t.description) : 'No description.'}</div></div>
+    ${deps ? `<div class="tm-sec"><h4>Depends on</h4><div class="tm-deps">${deps}</div></div>` : ''}
+    <div class="tm-sec"><h4>Comments${t.comments && t.comments.length ? ' · ' + t.comments.length : ''}</h4>${comments ? `<div class="tm-comments">${comments}</div>` : '<div class="tm-desc empty">No comments yet.</div>'}</div>
+    <div class="tm-foot">
+      <span>created ${ago(t.created_at)} ago${t.created_by ? ' by ' + esc(t.created_by) : ''}</span>
+      <span>updated ${ago(t.updated_at)} ago</span>
+      <span>id ${esc(t.id)}</span>
+    </div>`;
+}
+// board card → open its task; a dep row inside the modal → open that task
+$('#board').addEventListener('click', (e) => { const c = e.target.closest('[data-task]'); if (c) openTask(c.dataset.task); });
+$('#board').addEventListener('keydown', (e) => { const c = e.target.closest('[data-task]'); if (c && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openTask(c.dataset.task); } });
+$('#tm-body').addEventListener('click', (e) => { const d = e.target.closest('.tm-dep[data-task]'); if (d) openTask(d.dataset.task); });
+$('#tm-close').addEventListener('click', closeTask);
+$('#task-modal').addEventListener('click', (e) => { if (e.target === $('#task-modal')) closeTask(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#task-modal').hidden) closeTask(); });
 
 const fmtTok = (n) => n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n || 0);
 const usd = (n) => '$' + (n || 0).toFixed(4);

@@ -47,6 +47,21 @@ test('rmDep unblocks a task', () => {
   assert.equal(Tasks.next('b', { board_id: bid }).task.title, 'P', 'P now unblocked (Q is leased)');
 });
 
+test('Tasks.get hydrates comments and deps (the task-detail modal contract)', () => {
+  const bid = newBoard();
+  const a = Tasks.create({ board_id: bid, column: 'Todo', title: 'A', description: 'do the thing' });
+  const b = Tasks.create({ board_id: bid, column: 'Todo', title: 'B' });
+  Tasks.addDep(a.id, b.id);
+  Tasks.comment(a.id, { author: 'Forge', body: 'started this' });
+  const t = Tasks.get(a.id);
+  assert.equal(t.description, 'do the thing');
+  assert.deepEqual(t.deps, [b.id], 'deps is an array of dependency ids');
+  assert.equal(t.comments.length, 1);
+  assert.equal(t.comments[0].author, 'Forge');
+  assert.equal(t.comments[0].body, 'started this');
+  assert.equal(Tasks.get('tsk_nope'), null, 'unknown id → null');
+});
+
 test('next reports when nothing is available', () => {
   assert.equal(Tasks.next('x', { board_id: newBoard() }).ok, false);
 });
