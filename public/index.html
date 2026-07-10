@@ -81,6 +81,18 @@
     </section>
 
     <section id="view-messages" class="view">
+      <form class="compose" id="compose" autocomplete="off">
+        <div class="compose-line">
+          <select id="msg-from" class="compose-sel" aria-label="Send as agent"></select>
+          <span class="compose-arrow" aria-hidden="true">→</span>
+          <select id="msg-to" class="compose-sel" aria-label="Send to"></select>
+        </div>
+        <div class="compose-line">
+          <input id="msg-body" class="compose-input" maxlength="500" aria-label="Message body"
+                 placeholder="Message the team…  (⌘⏎ / Ctrl+⏎ to send)" />
+          <button type="submit" id="msg-send" class="compose-send" disabled>Send ✉</button>
+        </div>
+      </form>
       <div class="msg-list" id="messages"></div>
     </section>
 

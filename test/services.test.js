@@ -11,7 +11,7 @@ const work = mkdtempSync(join(tmpdir(), 'hq-test-'));
 process.env.HQ_DB_PATH = join(work, 'hq.db');
 process.on('exit', () => { try { rmSync(work, { recursive: true, force: true }); } catch {} });
 
-const { Boards, Tasks, Memory, Agents, Graph, Activity } = await import('../src/services.js');
+const { Boards, Tasks, Memory, Agents, Graph, Activity, Messages } = await import('../src/services.js');
 const newBoard = () => Boards.create({ name: 'Test board' }).id;
 
 test('ensureDefault provides a board with the standard columns', () => {
@@ -143,4 +143,23 @@ test('activity: recent can filter to one agent\'s timeline', () => {
 
   const all = Activity.recent({});
   assert.ok(all.length > mine.length, 'unfiltered returns more than one agent\'s slice');
+});
+
+test('messages: compose send posts a directed message, and a null recipient is a broadcast (the compose-bar contract)', () => {
+  const gus = Agents.register({ name: 'Gus-compose', role: 'r', avatar: '🧑' });
+  const pam = Agents.register({ name: 'Pam-compose', role: 'r', avatar: '👩' });
+
+  // directed: from Gus → Pam, exactly what the compose form POSTs
+  const direct = Messages.send({ from_agent: gus.id, to_agent: pam.id, body: 'ship it' });
+  assert.equal(direct.from_agent, gus.id);
+  assert.equal(direct.to_agent, pam.id);
+  assert.ok(Messages.recent().some((m) => m.id === direct.id), 'appears in the recent feed the tab renders');
+
+  // 📢 everyone: a null recipient is a broadcast that reaches Pam's inbox
+  const bcast = Messages.send({ from_agent: gus.id, to_agent: null, body: 'standup in 5' });
+  assert.equal(bcast.to_agent, null);
+  assert.ok(Messages.inbox({ agent: pam.id }).some((m) => m.id === bcast.id), 'broadcast lands in every other agent\'s inbox');
+
+  // an empty body is rejected (the form guards this client-side too)
+  assert.throws(() => Messages.send({ from_agent: gus.id, body: '' }), /body required/);
 });

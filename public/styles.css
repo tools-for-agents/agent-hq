@@ -170,6 +170,21 @@ main { grid-area: main; overflow: auto; padding: 18px 22px; }
 .msg .mh .to { color: var(--accent); }
 .msg .mh .t { margin-left: auto; color: var(--muted); font-size: 10px; }
 .msg .mb { margin-top: 7px; font-size: 13.5px; white-space: pre-wrap; }
+/* Compose bar */
+.compose { max-width: 760px; margin-bottom: 16px; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 12px 14px; display: flex; flex-direction: column; gap: 9px; }
+.compose-line { display: flex; align-items: center; gap: 9px; }
+.compose-arrow { color: var(--muted); flex: none; }
+.compose-sel { background: var(--panel-2); color: var(--txt); border: 1px solid var(--line);
+  border-radius: 9px; padding: 7px 10px; font-size: 13px; cursor: pointer; max-width: 240px; }
+.compose-sel:first-child { font-weight: 700; }
+.compose-input { flex: 1; min-width: 0; background: var(--bg); color: var(--txt); border: 1px solid var(--line);
+  border-radius: 9px; padding: 9px 12px; font-size: 13.5px; }
+.compose-input::placeholder { color: var(--muted); }
+.compose-send { flex: none; background: var(--accent); color: #0b0e14; border: 1px solid var(--accent);
+  border-radius: 9px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; transition: filter .12s; }
+.compose-send:hover:not(:disabled) { filter: brightness(1.1); }
+.compose-send:disabled { opacity: .45; cursor: not-allowed; }
 
 /* Ledger */
 .ledger-totals { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }

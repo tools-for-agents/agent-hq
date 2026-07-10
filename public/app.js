@@ -198,6 +198,7 @@ async function renderLedger() {
 }
 
 async function renderMessages() {
+  renderCompose();
   const list = await api('/messages?limit=60');
   $('#messages').innerHTML = list.length ? list.map((m) => {
     const from = AGENTS[m.from_agent]; const to = AGENTS[m.to_agent];
@@ -212,6 +213,51 @@ async function renderMessages() {
     </div>`;
   }).join('') : '<div class="empty">No messages yet.</div>';
 }
+
+// Compose bar: pick a sender + recipient (or 📢 everyone) and post to /api/messages.
+// Populated from AGENTS (loaded at boot); selections are preserved across re-renders.
+function renderCompose() {
+  const agents = Object.values(AGENTS);
+  const from = $('#msg-from'), to = $('#msg-to');
+  if (!agents.length) {
+    from.innerHTML = to.innerHTML = '<option value="">no agents yet</option>';
+    from.disabled = to.disabled = true; $('#msg-send').disabled = true; return;
+  }
+  from.disabled = to.disabled = false;
+  const opt = (a) => `<option value="${esc(a.id)}">${a.avatar || '🤖'} ${esc(a.name)}</option>`;
+  const prevFrom = from.value || agents[0].id;
+  from.innerHTML = agents.map(opt).join('');
+  from.value = AGENTS[prevFrom] ? prevFrom : agents[0].id;
+  const prevTo = to.value;
+  to.innerHTML = '<option value="">📢 everyone</option>' +
+    agents.filter((a) => a.id !== from.value).map(opt).join('');   // can't message yourself
+  to.value = [...to.options].some((o) => o.value === prevTo) ? prevTo : '';
+  syncSendState();
+}
+
+function syncSendState() {
+  $('#msg-send').disabled = !$('#msg-body').value.trim() || $('#msg-from').disabled;
+}
+
+async function sendMessage() {
+  const body = $('#msg-body').value.trim();
+  if (!body || $('#msg-from').disabled) return;
+  const btn = $('#msg-send'); btn.disabled = true;
+  await api('/messages', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ from_agent: $('#msg-from').value || null, to_agent: $('#msg-to').value || null, body }),
+  });
+  $('#msg-body').value = '';                 // the SSE 'refresh' also repaints, but do it now for snappiness
+  await renderMessages(); renderStats();
+  $('#msg-body').focus();
+}
+
+$('#compose').addEventListener('submit', (e) => { e.preventDefault(); sendMessage(); });
+$('#msg-from').addEventListener('change', renderCompose);   // keep "to" from offering the sender
+$('#msg-body').addEventListener('input', syncSendState);
+$('#msg-body').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendMessage(); }
+});
 
 async function renderAgents() {
   const list = await api('/agents');
