@@ -272,3 +272,14 @@ main { grid-area: main; overflow: auto; padding: 18px 22px; }
   .gh-top { width: min(220px, 60%); }
   .graph-panel { width: 88%; }
 }
+
+
+/* cross-tool footer — this is one of tools-for-agents' six web views */
+.xtk{position:fixed;left:50%;bottom:0;transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap:11px;max-width:96vw;overflow-x:auto;padding:5px 14px;border:1px solid rgba(255,255,255,.1);border-bottom:none;border-radius:11px 11px 0 0;background:rgba(12,13,17,.82);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;line-height:1;white-space:nowrap;opacity:.5;transition:opacity .2s;scrollbar-width:none;}
+.xtk::-webkit-scrollbar{display:none;}
+.xtk:hover{opacity:1;}
+.xtk .xtk-l{color:#8a8f9c;letter-spacing:.3px;}
+.xtk a,.xtk .cur{color:var(--x);text-decoration:none;}
+.xtk a{opacity:.62;transition:opacity .12s,text-shadow .12s;}
+.xtk a:hover{opacity:1;text-shadow:0 0 10px var(--x);}
+.xtk .cur{font-weight:700;}
