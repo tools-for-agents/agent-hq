@@ -9,6 +9,11 @@ function emit(activity) {
   broadcast('refresh', { ts: now() });
 }
 
+// Coerce a user-supplied count (which may arrive as NaN or a numeric string from
+// a query param) to a positive integer, capped, else the default — so a bad
+// `?limit=abc` can't bind `LIMIT NaN` (SQL error) or slice(0, NaN) to nothing.
+const posInt = (v, def, cap = 500) => (Number.isFinite(+v) && +v > 0 ? Math.min(Math.floor(+v), cap) : def);
+
 const parse = (row, ...fields) => {
   if (!row) return row;
   for (const f of fields) {
@@ -315,11 +320,11 @@ export const Memory = {
     if (agent_id) { sql += ` AND (agent_id=? OR agent_id IS NULL)`; args.push(agent_id); }
     if (namespace) { sql += ` AND namespace=?`; args.push(namespace); }
     if (tag) { sql += ` AND tags LIKE ?`; args.push(`%"${tag}"%`); }
-    sql += ` ORDER BY importance DESC, updated_at DESC LIMIT ?`; args.push(Math.min(limit, 200));
+    sql += ` ORDER BY importance DESC, updated_at DESC LIMIT ?`; args.push(posInt(limit, 25, 200));
     return all(sql, ...args).map((m) => parse(m, 'tags'));
   },
 
-  list: (limit = 100) => all(`SELECT * FROM memories ORDER BY updated_at DESC LIMIT ?`, limit).map((m) => parse(m, 'tags')),
+  list: (limit = 100) => all(`SELECT * FROM memories ORDER BY updated_at DESC LIMIT ?`, posInt(limit, 100, 500)).map((m) => parse(m, 'tags')),
 
   remove(id) {
     run(`DELETE FROM memories WHERE id=?`, id);
@@ -352,7 +357,7 @@ export const Messages = {
                WHERE (m.to_agent=? OR m.to_agent IS NULL) AND (m.from_agent IS NULL OR m.from_agent!=?)`;
     const args = [agent, agent, agent];
     if (unread_only) sql += ` AND r.agent_id IS NULL`;
-    sql += ` ORDER BY m.created_at DESC LIMIT ?`; args.push(Math.min(limit, 200));
+    sql += ` ORDER BY m.created_at DESC LIMIT ?`; args.push(posInt(limit, 50, 200));
     const rows = all(sql, ...args).map((m) => ({ ...m, is_read: !!m.is_read }));
     if (mark_read && rows.length) {
       for (const m of rows) {
@@ -370,7 +375,7 @@ export const Messages = {
                   AND r.agent_id IS NULL`, agent, agent, agent).n;
   },
 
-  recent: (limit = 50) => all(`SELECT * FROM messages ORDER BY created_at DESC LIMIT ?`, limit),
+  recent: (limit = 50) => all(`SELECT * FROM messages ORDER BY created_at DESC LIMIT ?`, posInt(limit, 50, 500)),
 };
 
 // ── Run / Cost ledger ────────────────────────────────────────────────────────
@@ -422,7 +427,7 @@ export const Ledger = {
     return get(`SELECT * FROM runs WHERE id=?`, id);
   },
 
-  list: (limit = 50) => all(`SELECT * FROM runs ORDER BY started_at DESC LIMIT ?`, limit),
+  list: (limit = 50) => all(`SELECT * FROM runs ORDER BY started_at DESC LIMIT ?`, posInt(limit, 50, 500)),
 
   summary() {
     const totals = get(`SELECT COUNT(*) runs, COALESCE(SUM(input_tokens),0) input_tokens,
@@ -458,7 +463,7 @@ export const Activity = {
   // `type` to see one category (task / memory / message / run / agent) — the event
   // types are `category.action`, so a category matches `type LIKE 'category.%'`.
   recent({ limit = 80, actor, type } = {}) {
-    limit = Number.isFinite(+limit) && +limit > 0 ? Math.min(Math.floor(+limit), 500) : 80;
+    limit = posInt(limit, 80, 500);
     let sql = `SELECT * FROM activity`;
     const args = [];
     const where = [];
@@ -563,6 +568,7 @@ export const Graph = {
   // namespaces and authors carry the most knowledge. For agents asking
   // "what does the company know about?" without pulling every node.
   summary({ top = 12 } = {}) {
+    top = posInt(top, 12, 100);   // a bad ?top=abc would slice(0, NaN) → empty rankings
     const g = Graph.build();
     const rank = (type) => g.nodes.filter((n) => n.type === type)
       .map((n) => ({ label: n.label, memories: n.count || 0 }))

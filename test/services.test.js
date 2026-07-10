@@ -197,3 +197,25 @@ test('ledger: summary exposes a chronological spend series (drives the sparkline
   const cum = s.spend_series.reduce((a, x) => a + x.cost_usd, 0);
   assert.ok(Math.abs(cum - s.total_cost_usd) < 1e-9, 'the cumulative series sums to total spend');
 });
+
+test('list/summary functions coerce a bad limit/top — closes the input-robustness sweep', () => {
+  const a = Agents.register({ name: 'Ada-posint', role: 'r', avatar: '🅰️' });
+  const b = Agents.register({ name: 'Bo-posint', role: 'r', avatar: '🅱️' });
+  Messages.send({ from_agent: a.id, to_agent: b.id, body: 'hi' });
+  Ledger.record({ agent_id: a.id, label: 'r', model: 'claude-haiku-4-5-20251001', input_tokens: 1, output_tokens: 1, cost_usd: 0.001 });
+  Memory.write({ agent_id: a.id, title: 'Posint memo', content: 'x', namespace: 'n', tags: ['posint'] });
+
+  // a bad limit (NaN from ?limit=abc, or ≤0) used to bind LIMIT NaN (SQL error)
+  // or LIMIT 0 (empty) — every list fn must fall back to its default set instead
+  for (const bad of [NaN, 0, -5, 'abc', undefined]) {
+    assert.equal(Messages.recent(bad).length, Messages.recent().length, `Messages.recent limit=${String(bad)}`);
+    assert.equal(Ledger.list(bad).length, Ledger.list().length, `Ledger.list limit=${String(bad)}`);
+    assert.equal(Memory.list(bad).length, Memory.list().length, `Memory.list limit=${String(bad)}`);
+    assert.equal(Memory.search({ limit: bad }).length, Memory.search({}).length, `Memory.search limit=${String(bad)}`);
+    assert.equal(Messages.inbox({ agent: b.id, limit: bad }).length, Messages.inbox({ agent: b.id }).length, `Messages.inbox limit=${String(bad)}`);
+  }
+  // Graph.summary top: a bad top must not slice(0, NaN) → empty rankings
+  assert.equal(Graph.summary({ top: 'abc' }).top_tags.length, Graph.summary({}).top_tags.length, 'Graph.summary top=abc recovers the default');
+  // a valid small limit is still honoured
+  assert.ok(Messages.recent(1).length <= 1, 'a valid small limit is respected');
+});
