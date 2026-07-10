@@ -541,4 +541,23 @@ export const Graph = {
       },
     };
   },
+
+  // A compact, token-efficient digest of the collective brain: which tags,
+  // namespaces and authors carry the most knowledge. For agents asking
+  // "what does the company know about?" without pulling every node.
+  summary({ top = 12 } = {}) {
+    const g = Graph.build();
+    const rank = (type) => g.nodes.filter((n) => n.type === type)
+      .map((n) => ({ label: n.label, memories: n.count || 0 }))
+      .sort((a, b) => b.memories - a.memories);
+    const authors = g.nodes.filter((n) => n.type === 'agent')
+      .map((n) => ({ agent: n.label, avatar: n.avatar, memories: n.count || 0 }))
+      .sort((a, b) => b.memories - a.memories);
+    return {
+      stats: g.stats,
+      top_tags: rank('tag').slice(0, top),
+      namespaces: rank('namespace'),
+      top_authors: authors.slice(0, top),
+    };
+  },
 };

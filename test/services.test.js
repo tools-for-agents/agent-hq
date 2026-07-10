@@ -89,4 +89,11 @@ test('graph: memories link to their namespace, tags, and author', () => {
   const sharedTag = g.nodes.find((n) => n.id === 'tag:shared-tag');
   assert.equal(sharedTag.count, 2, 'shared tag counts both memories');
   assert.ok(!g.edges.some((e) => e.target === 'mem:' + m2.id && e.type === 'authored'), 'org-wide memory has no author');
+
+  // the compact digest ranks the shared tag as the top hub for this namespace
+  const s = Graph.summary({ top: 5 });
+  assert.ok(s.stats.memories >= 2 && s.top_tags.length && s.namespaces.length, 'summary has stats + rankings');
+  const shared = s.top_tags.find((t) => t.label === 'shared-tag');
+  assert.ok(shared && shared.memories === 2, 'digest counts the shared tag hub');
+  assert.ok(s.top_authors.some((a) => a.agent === 'Cartographer'), 'digest lists the author');
 });

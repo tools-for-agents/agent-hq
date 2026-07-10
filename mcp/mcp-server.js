@@ -354,6 +354,20 @@ const tools = [
     inputSchema: { type: 'object', properties: {} },
     run: () => hq('GET', '/api/stats'),
   },
+  {
+    name: 'company_graph',
+    description: 'Explore the company knowledge graph — how shared memories connect through their namespaces, tags and authors. By default returns a compact digest (top tags/namespaces/authors by memory count) to answer "what does the company know about?". Pass full=true for the raw node/edge graph.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        full: { type: 'boolean', description: 'Return the full node/edge graph instead of the digest (larger).' },
+        top: { type: 'integer', description: 'How many top tags/authors to include in the digest (default 12).' },
+      },
+    },
+    run: (a) => (a.full
+      ? hq('GET', '/api/graph')
+      : hq('GET', '/api/graph?view=summary&top=' + (a.top || 12))),
+  },
 ];
 
 const toolMap = Object.fromEntries(tools.map((t) => [t.name, t]));

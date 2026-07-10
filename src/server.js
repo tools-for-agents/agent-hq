@@ -90,7 +90,7 @@ route('DELETE', '/api/memory/:id', (p) => Memory.remove(p.id));
 // Activity + stats
 route('GET', '/api/activity', (_p, _b, q) => Activity.recent(q.limit ? +q.limit : 80));
 route('GET', '/api/stats', () => Stats.summary());
-route('GET', '/api/graph', () => Graph.build());
+route('GET', '/api/graph', (_p, _b, q) => (q.view === 'summary' ? Graph.summary({ top: q.top ? +q.top : 12 }) : Graph.build()));
 route('GET', '/api/health', () => ({ ok: true, service: 'agent-hq', ts: new Date().toISOString() }));
 
 // ── Static file serving ───────────────────────────────────────────────────

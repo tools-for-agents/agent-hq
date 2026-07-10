@@ -82,6 +82,7 @@ Point any MCP client at `mcp/mcp-server.js`. It speaks stdio JSON-RPC and proxie
 | `message_inbox` | Read your inbox (direct + broadcast), optionally mark read. |
 | `memory_write` | Store a durable memory. |
 | `memory_search` | Recall by text / namespace / tag / owner. |
+| `company_graph` | Explore the knowledge graph — a compact digest of what the company knows about (top tags / namespaces / authors), or the full node/edge graph. |
 | `run_start` / `run_end` | Track a unit of work for token/cost accounting. |
 | `run_record` | Log an already-finished run in one call. |
 | `ledger_summary` | Company spend: totals, per-agent, per-model. |
