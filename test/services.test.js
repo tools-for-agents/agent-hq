@@ -11,7 +11,7 @@ const work = mkdtempSync(join(tmpdir(), 'hq-test-'));
 process.env.HQ_DB_PATH = join(work, 'hq.db');
 process.on('exit', () => { try { rmSync(work, { recursive: true, force: true }); } catch {} });
 
-const { Boards, Tasks, Memory, Agents, Graph } = await import('../src/services.js');
+const { Boards, Tasks, Memory, Agents, Graph, Activity } = await import('../src/services.js');
 const newBoard = () => Boards.create({ name: 'Test board' }).id;
 
 test('ensureDefault provides a board with the standard columns', () => {
@@ -96,4 +96,20 @@ test('graph: memories link to their namespace, tags, and author', () => {
   const shared = s.top_tags.find((t) => t.label === 'shared-tag');
   assert.ok(shared && shared.memories === 2, 'digest counts the shared tag hub');
   assert.ok(s.top_authors.some((a) => a.agent === 'Cartographer'), 'digest lists the author');
+});
+
+test('activity: recent can filter to one agent\'s timeline', () => {
+  const alfa = Agents.register({ name: 'Alfa-timeline', role: 'r', avatar: '🅰️' });
+  const beta = Agents.register({ name: 'Beta-timeline', role: 'r', avatar: '🅱️' });
+  // each register + a status change emits activity attributed to that agent
+  Agents.update(alfa.id, { status: 'working' });
+  Agents.update(beta.id, { status: 'working' });
+
+  const mine = Activity.recent({ actor: alfa.id });
+  assert.ok(mine.length >= 1, 'the agent has activity');
+  assert.ok(mine.every((a) => a.actor === alfa.id), 'only this agent\'s activity is returned');
+  assert.ok(!mine.some((a) => a.actor === beta.id), 'no other agent leaks in');
+
+  const all = Activity.recent({});
+  assert.ok(all.length > mine.length, 'unfiltered returns more than one agent\'s slice');
 });

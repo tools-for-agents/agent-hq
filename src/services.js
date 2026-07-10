@@ -449,8 +449,14 @@ export const Ledger = {
 
 // ── Activity / Stats ─────────────────────────────────────────────────────────
 export const Activity = {
-  recent: (limit = 80) => all(`SELECT * FROM activity ORDER BY ts DESC LIMIT ?`, limit)
-    .map((a) => { try { a.data = a.data ? JSON.parse(a.data) : null; } catch {} return a; }),
+  // Recent activity, newest first. Pass `actor` to see one agent's timeline.
+  recent({ limit = 80, actor } = {}) {
+    let sql = `SELECT * FROM activity`;
+    const args = [];
+    if (actor) { sql += ` WHERE actor = ?`; args.push(actor); }
+    sql += ` ORDER BY ts DESC LIMIT ?`; args.push(Math.min(limit, 500));
+    return all(sql, ...args).map((a) => { try { a.data = a.data ? JSON.parse(a.data) : null; } catch {} return a; });
+  },
 };
 
 export const Stats = {

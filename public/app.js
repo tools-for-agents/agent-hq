@@ -11,6 +11,7 @@ const ago = (iso) => {
 };
 
 let AGENTS = {};
+let activityActor = null;   // Activity tab: null = all agents, else an agent id
 
 // ── Tabs (deep-linkable via #hash) ──────────────────────────────────────────
 function activateTab(view) {
@@ -23,6 +24,7 @@ function activateTab(view) {
   if (view === 'messages') renderMessages();
   if (view === 'memory') renderMemory($('#mem-search').value);
   if (view === 'ledger') renderLedger();
+  if (view === 'activity') { renderActivityFilter(); renderActivity(); }
   if (view === 'graph') window.HQGraph?.activate();
   else window.HQGraph?.deactivate();
   if (location.hash !== '#' + view) history.replaceState(null, '', '#' + view);
@@ -162,10 +164,28 @@ function feedItem(a, flash) {
   return `<li class="${flash ? 'flash' : ''}"><span class="t">${ago(a.ts)}</span><span class="s">${esc(a.summary)}${who ? ` <i style="color:var(--muted)">· ${esc(who)}</i>` : ''}</span></li>`;
 }
 
+// Per-agent timeline filter for the Activity tab.
+function renderActivityFilter() {
+  const agents = Object.values(AGENTS).sort((a, b) => a.name.localeCompare(b.name));
+  $('#act-filter').innerHTML =
+    `<button class="actf${!activityActor ? ' on' : ''}" data-actor="">📡 all</button>` +
+    agents.map((a) => `<button class="actf${activityActor === a.id ? ' on' : ''}" data-actor="${esc(a.id)}">${a.avatar || '🤖'} ${esc(a.name)}</button>`).join('');
+}
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('#act-filter [data-actor]'); if (!b) return;
+  activityActor = b.dataset.actor || null;
+  renderActivityFilter(); renderActivity();
+});
+
 async function renderActivity() {
-  const list = await api('/activity?limit=80');
-  $('#activity-full').innerHTML = list.map((a) => feedItem(a)).join('');
-  $('#activity-mini').innerHTML = list.slice(0, 30).map((a) => feedItem(a)).join('');
+  const full = await api('/activity?limit=80' + (activityActor ? '&actor=' + encodeURIComponent(activityActor) : ''));
+  const who = activityActor ? AGENTS[activityActor] : null;
+  $('#activity-full').innerHTML =
+    (who ? `<li class="act-head">${full.length} event${full.length === 1 ? '' : 's'} by ${who.avatar || '🤖'} ${esc(who.name)}</li>` : '') +
+    (full.length ? full.map((a) => feedItem(a)).join('') : '<li class="act-empty">No activity yet.</li>');
+  // the sidebar ticker always shows the whole company's live feed
+  const mini = activityActor ? await api('/activity?limit=30') : full;
+  $('#activity-mini').innerHTML = mini.slice(0, 30).map((a) => feedItem(a)).join('');
 }
 
 // ── Live updates via SSE ─────────────────────────────────────────────────
@@ -174,7 +194,7 @@ function refreshAll() {
   clearTimeout(debounce);
   debounce = setTimeout(async () => {
     await renderAgents();           // load agents first (used by board/feed)
-    renderStats(); renderBoard(); renderActivity();
+    renderStats(); renderBoard(); renderActivityFilter(); renderActivity();
     if ($('#view-memory').classList.contains('active')) renderMemory($('#mem-search').value);
     if ($('#view-messages').classList.contains('active')) renderMessages();
     if ($('#view-ledger').classList.contains('active')) renderLedger();
@@ -189,7 +209,7 @@ function connect() {
   es.addEventListener('activity', (e) => {
     const a = JSON.parse(e.data);
     $('#activity-mini').insertAdjacentHTML('afterbegin', feedItem(a, true));
-    $('#activity-full').insertAdjacentHTML('afterbegin', feedItem(a, true));
+    if (!activityActor || a.actor === activityActor) $('#activity-full').insertAdjacentHTML('afterbegin', feedItem(a, true));
   });
   es.onerror = () => { $('#conn').classList.remove('live'); $('#conn-label').textContent = 'reconnecting…'; };
 }
@@ -207,7 +227,7 @@ addEventListener('hashchange', routeHash);
 
 // boot
 (async () => {
-  await renderAgents(); renderStats(); renderBoard(); renderActivity(); renderMemory(); connect();
+  await renderAgents(); renderStats(); renderBoard(); renderActivityFilter(); renderActivity(); renderMemory(); connect();
   await routeHash();
 })();
 setInterval(renderStats, 15000);  // keep "last seen" fresh
