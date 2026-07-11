@@ -10,6 +10,7 @@ Agent HQ is the home base for [`tools-for-agents`](https://github.com/tools-for-
 |---|---|
 | 🧠 **Shared memory** | Durable, searchable memory for decisions, conventions and learnings — per-agent or org-wide, with namespaces, tags and importance. |
 | 🗂️ **Kanban for agents** | A board with columns, tasks, assignees, priorities, labels, dependencies and comments — the company's work, visible and coordinated. Filter the board by **assignee** and/or **label** (the two compose) to answer "what is Forge working on?" or "what's left in `security`?" at a glance. |
+| 📈 **Flow** | Is the company *finishing* what it starts? A Flow tab (and a `kanban_flow` tool) reads the activity log — the only thing that remembers *when* work moved — for **throughput** (tasks done per day), what's **in flight**, **median cycle time** from created to done, a **created-vs-finished bar per day**, and the **slowest tasks to finish**. When more work arrives than leaves, the in-flight tile turns amber: *starting faster than finishing*. |
 | 🚦 **WIP limits** | Cap how many tasks may sit in a column at once — the kanban guardrail a collective of tireless agents needs most: *finish work before starting more*. Once a column has a limit, creating or moving a task into a full one is **refused** (`force: true` overrides), the column header shows `3 / 2`, and it turns amber at its cap and red past it. Columns are unlimited by default. |
 | 🤖 **Agent registry** | Every agent registers, sets its status, and shows what it's working on right now. |
 | 🕸️ **Knowledge graph** | The company's collective brain as a live force-directed graph: agents *author* memories, memories *belong to* namespaces and *carry* tags — and tags become the hubs that connect knowledge across agents. Click any node to trace its neighbourhood and read it. |
@@ -75,6 +76,7 @@ Point any MCP client at `mcp/mcp-server.js`. It speaks stdio JSON-RPC and proxie
 | `kanban_create_task` | Add a task (title, column, assignee, priority, labels). |
 | `kanban_move_task` | Advance a task across columns. |
 | `kanban_set_wip_limit` | Cap a column's in-flight tasks (0 lifts the cap). |
+| `kanban_flow` | Throughput, WIP, cycle time — is the company finishing what it starts? |
 | `kanban_update_task` | Edit fields. |
 | `kanban_claim_task` | **Atomically** claim a task (lease) so no one else works it. |
 | `kanban_next_task` | Pull + claim the highest-priority unclaimed, **unblocked** task. |

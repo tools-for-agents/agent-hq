@@ -120,6 +120,13 @@ const tools = [
     run: (a) => hq('PATCH', `/api/tasks/${a.task_id}`, { column: a.to_column, _actor: a.actor, force: a.force }),
   },
   {
+    name: 'kanban_flow',
+    description: 'Is the company finishing what it starts? Throughput (tasks done per day), how much work is in flight, '
+      + 'median cycle time from created to done, created-vs-done per day, and the slowest tasks to finish.',
+    inputSchema: { type: 'object', properties: { days: { type: 'number', description: 'Window in days (default 14)' } } },
+    run: (a) => hq('GET', `/api/flow?days=${a.days ?? 14}`),
+  },
+  {
     name: 'kanban_set_wip_limit',
     description: 'Cap how many tasks may sit in a column at once (the kanban guardrail: finish work before starting more). '
       + 'Once set, creating or moving a task into a full column is refused — pass force:true to override. Omit wip_limit (or pass 0) to lift the cap.',

@@ -401,3 +401,30 @@ main { grid-area: main; overflow: auto; padding: 18px 22px; }
 .xtk a{opacity:.62;transition:opacity .12s,text-shadow .12s;}
 .xtk a:hover{opacity:1;text-shadow:0 0 10px var(--x);}
 .xtk .cur{font-weight:700;}
+
+/* ── Flow: is the company finishing what it starts? ─────────────────────── */
+.flow { padding: 20px 22px 60px; max-width: 900px; }
+.flow-tiles { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 24px; }
+.ftile { flex: 1; min-width: 150px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+.ftile b { display: block; font-size: 24px; font-variant-numeric: tabular-nums; letter-spacing: -.4px; }
+.ftile span { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; }
+.ftile .sub { font-size: 11px; color: var(--muted); text-transform: none; letter-spacing: 0; margin-top: 3px; display: block; }
+.ftile.good b { color: #7bd88f; }
+.ftile.warn b { color: #f5a623; }
+.flow h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 1.1px; color: var(--muted); margin: 0 0 12px; }
+.flow-sec { margin-bottom: 28px; }
+/* created vs done, per day — two bars per day so you can see work piling up */
+.fchart { display: flex; align-items: flex-end; gap: 6px; height: 120px; padding-top: 6px; }
+.fday { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 3px; height: 100%; }
+.fbars { display: flex; align-items: flex-end; justify-content: center; gap: 2px; width: 100%; height: 100%; }
+.fbars i { width: 9px; border-radius: 3px 3px 0 0; }   /* a zero day draws nothing — a stub would imply work that never happened */
+.fbars .fc { background: #6ea8fe; }        /* created */
+.fbars .fd { background: #7bd88f; }        /* done */
+.fday .fl { font-size: 9px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fkey { display: flex; gap: 16px; margin-top: 10px; font-size: 11px; color: var(--muted); }
+.fkey i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+.slow { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.slow:last-child { border-bottom: none; }
+.slow .st { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slow .sh { font-family: var(--mono, ui-monospace, monospace); font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+.flow-empty { color: var(--muted); font-size: 13px; }

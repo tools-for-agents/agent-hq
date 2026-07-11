@@ -132,6 +132,73 @@ export const Boards = {
   },
 };
 
+// ── Flow: is the company finishing what it starts? ─────────────────────────
+// Everything here is read from the ACTIVITY LOG, because it is the only thing
+// that remembers *when* work moved — the tasks table only knows where a task is
+// now, not how long it took to get there.
+const DAY_MS = 86_400_000;
+export const Flow = {
+  summary({ days = 14 } = {}) {
+    days = posInt(days, 14, 90);
+    const since = new Date(Date.now() - (days - 1) * DAY_MS).toISOString().slice(0, 10);
+    const acts = all(`SELECT ts, type, entity_id, summary, data FROM activity
+                      WHERE entity='task' AND type IN ('task.created','task.moved') AND ts >= ?
+                      ORDER BY ts`, since);
+
+    // Did this move finish the task? Prefer the structured data we now record;
+    // fall back to the summary for rows written before it existed.
+    const finishes = (a) => {
+      try { const d = JSON.parse(a.data || 'null'); if (d && d.to) return String(d.to).toLowerCase() === 'done'; } catch {}
+      return /moved to done\s*$/i.test(a.summary || '');
+    };
+
+    const buckets = {};
+    for (let i = 0; i < days; i++) {
+      const d = new Date(Date.now() - (days - 1 - i) * DAY_MS).toISOString().slice(0, 10);
+      buckets[d] = { day: d, created: 0, done: 0 };
+    }
+    const doneAt = {};
+    for (const a of acts) {
+      const d = a.ts.slice(0, 10);
+      if (!buckets[d]) continue;
+      if (a.type === 'task.created') buckets[d].created++;
+      else if (finishes(a)) { buckets[d].done++; doneAt[a.entity_id] = a.ts; }   // last finish wins if reopened
+    }
+    const by_day = Object.values(buckets);
+    const created = by_day.reduce((n, b) => n + b.created, 0);
+    const done = by_day.reduce((n, b) => n + b.done, 0);
+
+    // Cycle time: how long a finished task sat between being created and being
+    // done. created_at comes from the task row, so it counts even if the task was
+    // created before this window.
+    const cycles = [];
+    for (const [id, ts] of Object.entries(doneAt)) {
+      const t = get(`SELECT title, created_at FROM tasks WHERE id=?`, id);
+      if (!t || !t.created_at) continue;                       // deleted since — nothing to measure
+      const hours = (new Date(ts) - new Date(t.created_at)) / 3_600_000;
+      if (hours >= 0) cycles.push({ id, title: t.title, hours: Math.round(hours * 10) / 10 });
+    }
+    const sorted = [...cycles].sort((a, b) => a.hours - b.hours);
+    const median = sorted.length
+      ? (sorted.length % 2 ? sorted[(sorted.length - 1) / 2].hours
+        : Math.round((sorted[sorted.length / 2 - 1].hours + sorted[sorted.length / 2].hours) / 2 * 10) / 10)
+      : null;
+
+    const wip = get(`SELECT COUNT(*) AS n FROM tasks t JOIN columns c ON c.id=t.column_id
+                     WHERE lower(c.name) != 'done'`).n;
+
+    return {
+      days, by_day, created, done, wip,
+      throughput_per_day: Math.round(done / days * 100) / 100,
+      // >1 means the company is taking on work faster than it finishes it
+      arrival_ratio: done ? Math.round(created / done * 100) / 100 : (created ? null : 0),
+      cycle: { n: cycles.length, median_hours: median,
+        avg_hours: cycles.length ? Math.round(cycles.reduce((a, c) => a + c.hours, 0) / cycles.length * 10) / 10 : null },
+      slowest: [...cycles].sort((a, b) => b.hours - a.hours).slice(0, 5),
+    };
+  },
+};
+
 // ── Tasks ──────────────────────────────────────────────────────────────────
 const colCount = (column_id) => get(`SELECT COUNT(*) AS n FROM tasks WHERE column_id=?`, column_id).n;
 
@@ -189,15 +256,17 @@ export const Tasks = {
     const t = get(`SELECT * FROM tasks WHERE id=?`, id);
     if (!t) throw new Error('task not found');
     const fields = { title: t.title, description: t.description, assignee: t.assignee, priority: t.priority };
-    let columnChange = null;
+    let columnChange = null, moveData = null;
 
     if (patch.column || patch.status) {
       const col = columnByName(t.board_id, patch.column || patch.status);
       if (col && col.id !== t.column_id) {
         assertWip(col, patch.force);        // moving INTO a full column is the case WIP limits exist to stop
         const pos = (get(`SELECT COALESCE(MAX(position),0)+1 AS p FROM tasks WHERE column_id=?`, col.id)).p;
+        const from = get(`SELECT name FROM columns WHERE id=?`, t.column_id);
         run(`UPDATE tasks SET column_id=?, position=? WHERE id=?`, col.id, pos, id);
         columnChange = col.name;
+        moveData = { from: from ? from.name : null, to: col.name };   // structured, so flow doesn't have to parse a sentence
       }
     }
     for (const k of Object.keys(fields)) if (k in patch) fields[k] = patch[k];
@@ -209,7 +278,7 @@ export const Tasks = {
       ? `➡️ "${t.title}" moved to ${columnChange}`
       : `✏️ "${fields.title}" updated`;
     emit(logActivity({ actor, type: columnChange ? 'task.moved' : 'task.updated',
-      entity: 'task', entity_id: id, summary }));
+      entity: 'task', entity_id: id, summary, data: moveData || undefined }));
     return Tasks.get(id);
   },
 

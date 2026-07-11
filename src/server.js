@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, extname, normalize } from 'node:path';
-import { Agents, Boards, Tasks, Memory, Messages, Ledger, Activity, Stats, Graph } from './services.js';
+import { Agents, Boards, Tasks, Memory, Messages, Ledger, Activity, Stats, Graph, Flow } from './services.js';
 import { addClient } from './events.js';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -56,6 +56,7 @@ route('POST', '/api/boards', (_p, body) => Boards.create(body));
 route('GET', '/api/board', () => Boards.ensureDefault());          // default board, full
 route('GET', '/api/boards/:id', (p) => Boards.full(p.id));
 route('POST', '/api/columns/wip', (_p, body) => Boards.setWipLimit(body));   // { column, wip_limit, board_id?, actor? }
+route('GET', '/api/flow', (_p, _b, q) => Flow.summary({ days: q.days }));    // throughput / cycle time from the activity log
 
 // Tasks
 route('GET', '/api/tasks', (_p, _b, q) => Tasks.list(q));

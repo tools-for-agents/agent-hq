@@ -27,6 +27,7 @@ function activateTab(view) {
   if (view === 'memory') renderMemory($('#mem-search').value);
   if (view === 'ledger') renderLedger();
   if (view === 'activity') { renderActivityFilter(); renderActivity(); }
+  if (view === 'flow') renderFlow();
   if (view === 'graph') window.HQGraph?.activate();
   else window.HQGraph?.deactivate();
   if (location.hash !== '#' + view) history.replaceState(null, '', '#' + view);
@@ -88,6 +89,57 @@ function card(t) {
       ${labels}
     </div>
   </div>`;
+}
+
+// ── Flow: is the company finishing what it starts? ───────────────────────────
+async function renderFlow() {
+  const f = await api('/flow?days=14');
+  const el = $('#flow');
+  if (!f.created && !f.done) {
+    el.innerHTML = '<div class="flow-empty">No tasks created or finished in the last 14 days — nothing to measure yet.</div>';
+    return;
+  }
+  const max = Math.max(1, ...f.by_day.map((d) => Math.max(d.created, d.done)));
+  const h = (n) => Math.round(n / max * 100);
+  // >1 means work is arriving faster than it is finished — the queue is growing
+  const piling = f.arrival_ratio != null && f.arrival_ratio > 1;
+  const cyc = f.cycle.median_hours;
+  const cycTxt = cyc == null ? '—' : cyc < 1 ? `${Math.round(cyc * 60)}m` : cyc < 48 ? `${cyc}h` : `${(cyc / 24).toFixed(1)}d`;
+
+  el.innerHTML = `
+    <div class="flow-tiles">
+      <div class="ftile good"><b>${f.done}</b><span>finished · 14d</span><span class="sub">${f.throughput_per_day}/day</span></div>
+      <div class="ftile"><b>${f.created}</b><span>started · 14d</span>
+        <span class="sub">${f.arrival_ratio == null ? 'nothing finished yet' : `${f.arrival_ratio}× created per done`}</span></div>
+      <div class="ftile ${piling ? 'warn' : ''}"><b>${f.wip}</b><span>in flight now</span>
+        <span class="sub">${piling ? '⚠ starting faster than finishing' : 'keeping up'}</span></div>
+      <div class="ftile"><b>${cycTxt}</b><span>median cycle</span>
+        <span class="sub">${f.cycle.n} task${f.cycle.n === 1 ? '' : 's'} measured</span></div>
+    </div>
+
+    <div class="flow-sec">
+      <h3>Created vs finished, per day</h3>
+      <div class="fchart">
+        ${f.by_day.map((d) => `
+          <div class="fday" title="${esc(d.day)} · ${d.created} created · ${d.done} done">
+            <div class="fbars">
+              <i class="fc" style="height:${h(d.created)}%${d.created ? ';min-height:3px' : ''}"></i>
+              <i class="fd" style="height:${h(d.done)}%${d.done ? ';min-height:3px' : ''}"></i>
+            </div>
+            <span class="fl">${esc(d.day.slice(8))}</span>
+          </div>`).join('')}
+      </div>
+      <div class="fkey">
+        <span><i style="background:#6ea8fe"></i>created</span>
+        <span><i style="background:#7bd88f"></i>finished</span>
+      </div>
+    </div>
+
+    ${f.slowest.length ? `<div class="flow-sec">
+      <h3>Slowest to finish</h3>
+      ${f.slowest.map((t) => `<div class="slow"><span class="st">${esc(t.title)}</span>
+        <span class="sh">${t.hours < 1 ? Math.round(t.hours * 60) + 'm' : t.hours < 48 ? t.hours + 'h' : (t.hours / 24).toFixed(1) + 'd'}</span></div>`).join('')}
+    </div>` : ''}`;
 }
 
 // Filter the board by assignee and/or label (client-side; the two compose).

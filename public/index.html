@@ -22,6 +22,7 @@
 
   <nav class="tabs">
     <button class="tab active" data-view="board">🗂️ Kanban</button>
+    <button class="tab" data-view="flow">📈 Flow</button>
     <button class="tab" data-view="agents">🤖 Agents</button>
     <button class="tab" data-view="memory">🧠 Memory</button>
     <button class="tab" data-view="graph">🕸️ Graph</button>
@@ -34,6 +35,10 @@
     <section id="view-board" class="view active">
       <div class="board-filter" id="board-filter" hidden></div>
       <div class="board" id="board"></div>
+    </section>
+
+    <section id="view-flow" class="view">
+      <div class="flow" id="flow"></div>
     </section>
 
     <section id="view-agents" class="view">

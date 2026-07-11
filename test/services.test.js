@@ -11,7 +11,7 @@ const work = mkdtempSync(join(tmpdir(), 'hq-test-'));
 process.env.HQ_DB_PATH = join(work, 'hq.db');
 process.on('exit', () => { try { rmSync(work, { recursive: true, force: true }); } catch {} });
 
-const { Boards, Tasks, Memory, Agents, Graph, Activity, Messages, Ledger } = await import('../src/services.js');
+const { Boards, Tasks, Memory, Agents, Graph, Activity, Messages, Ledger, Flow } = await import('../src/services.js');
 const newBoard = () => Boards.create({ name: 'Test board' }).id;
 
 test('ensureDefault provides a board with the standard columns', () => {
@@ -262,4 +262,49 @@ test('a WIP limit stops a column taking on more work than it can finish', () => 
   const lifted = Boards.full(bid).columns.find((c) => c.name === 'In Progress');
   assert.equal(lifted.at_limit, false);
   assert.equal(lifted.wip_limit, null);
+});
+
+test('Flow: throughput, cycle time and what is still in flight', () => {
+  const bid = newBoard();
+  const before = Flow.summary();
+
+  const a = Tasks.create({ board_id: bid, column: 'Todo', title: 'flow-a' });
+  const b = Tasks.create({ board_id: bid, column: 'Todo', title: 'flow-b' });
+  Tasks.create({ board_id: bid, column: 'Todo', title: 'flow-c' });   // never finished — stays WIP
+
+  // moving to a non-Done column is not finishing
+  Tasks.update(a.id, { column: 'In Progress' });
+  const mid = Flow.summary();
+  assert.equal(mid.done, before.done, 'moving to In Progress does not count as done');
+
+  Tasks.update(a.id, { column: 'Done' });
+  Tasks.update(b.id, { column: 'Done' });
+
+  const f = Flow.summary();
+  assert.equal(f.done, before.done + 2, 'two tasks finished');
+  assert.equal(f.created, before.created + 3, 'three were created');
+  assert.equal(f.wip, before.wip + 1, 'the unfinished one is still in flight');
+
+  // today's bucket carries them, and the window is contiguous
+  assert.equal(f.by_day.length, f.days);
+  const today = new Date().toISOString().slice(0, 10);
+  assert.ok(f.by_day.at(-1).day === today, 'the last bucket is today');
+  assert.equal(f.by_day.reduce((n, d) => n + d.done, 0), f.done, 'the daily buckets sum to the total');
+
+  // cycle time is measured from creation, and the finished tasks are ranked
+  assert.equal(f.cycle.n, f.done, 'every finished task has a cycle time');
+  assert.ok(f.cycle.median_hours >= 0, 'a cycle time is not negative');
+  assert.ok(f.slowest.length > 0 && f.slowest[0].hours >= (f.slowest.at(-1)?.hours ?? 0), 'slowest first');
+  assert.ok(f.slowest.some((s) => s.title === 'flow-a' || s.title === 'flow-b'));
+
+  // the move records WHERE it went, so flow never has to parse a sentence
+  const moved = Activity.recent({ type: 'task', limit: 200 })
+    .find((x) => x.type === 'task.moved' && x.entity_id === b.id);
+  const md = typeof moved.data === 'string' ? JSON.parse(moved.data) : moved.data;   // Activity.recent parses it; the raw row does not
+  assert.equal(md.to, 'Done', 'the move records where it went');
+  assert.equal(md.from, 'Todo', 'and where it came from');
+
+  // a bad ?days falls back rather than emptying the window
+  assert.equal(Flow.summary({ days: 'abc' }).days, 14);
+  assert.equal(Flow.summary({ days: 3 }).by_day.length, 3);
 });
