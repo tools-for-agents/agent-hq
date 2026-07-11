@@ -123,8 +123,11 @@ const tools = [
     name: 'kanban_flow',
     description: 'Is the company finishing what it starts? Throughput (tasks done per day), how much work is in flight, '
       + 'median cycle time from created to done, created-vs-done per day, and the slowest tasks to finish.',
-    inputSchema: { type: 'object', properties: { days: { type: 'number', description: 'Window in days (default 14)' } } },
-    run: (a) => hq('GET', `/api/flow?days=${a.days ?? 14}`),
+    inputSchema: { type: 'object', properties: {
+      days: { type: 'number', description: 'Window in days (default 14)' },
+      agent: { type: 'string', description: 'Restrict to one agent — what they started, finished, and still hold' },
+    } },
+    run: (a) => hq('GET', `/api/flow?days=${a.days ?? 14}${a.agent ? `&actor=${encodeURIComponent(a.agent)}` : ''}`),
   },
   {
     name: 'kanban_set_wip_limit',

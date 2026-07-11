@@ -308,3 +308,36 @@ test('Flow: throughput, cycle time and what is still in flight', () => {
   assert.equal(Flow.summary({ days: 'abc' }).days, 14);
   assert.equal(Flow.summary({ days: 3 }).by_day.length, 3);
 });
+
+test('Flow: one agent\'s flow is their own — what they finished, and what they still hold', () => {
+  const bid = newBoard();
+  const alice = Agents.register({ name: 'Alice-flow' }).id;
+  const bob = Agents.register({ name: 'Bob-flow' }).id;
+
+  const a1 = Tasks.create({ board_id: bid, column: 'Todo', title: 'alice-1', created_by: alice, assignee: alice });
+  const a2 = Tasks.create({ board_id: bid, column: 'Todo', title: 'alice-2', created_by: alice, assignee: alice });
+  const b1 = Tasks.create({ board_id: bid, column: 'Todo', title: 'bob-1', created_by: bob, assignee: bob });
+
+  Tasks.update(a1.id, { column: 'Done' }, alice);      // alice finished one
+  Tasks.update(b1.id, { column: 'Done' }, bob);        // bob finished one
+
+  const fa = Flow.summary({ actor: alice });
+  const fb = Flow.summary({ actor: bob });
+  const co = Flow.summary();
+
+  assert.equal(fa.actor, alice);
+  assert.equal(fa.done, 1, 'alice finished exactly her own');
+  assert.equal(fa.created, 2, 'and started two');
+  assert.equal(fb.done, 1, "bob's finish is not credited to alice");
+  assert.ok(co.done >= fa.done + fb.done, 'the company sees both');
+
+  // in flight = what is ASSIGNED to them and still open, not everything they touched
+  assert.equal(fa.wip, 1, 'alice still holds alice-2');
+  assert.equal(fb.wip, 0, 'bob holds nothing');
+
+  // an agent who moved someone else's task gets the credit for finishing it
+  Tasks.update(a2.id, { column: 'Done' }, bob);
+  assert.equal(Flow.summary({ actor: bob }).done, 2, 'bob finished it, so bob is credited');
+  assert.equal(Flow.summary({ actor: alice }).done, 1, 'alice is not');
+  assert.equal(Flow.summary({ actor: alice }).wip, 0, 'and alice now holds nothing open');
+});

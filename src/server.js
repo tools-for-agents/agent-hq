@@ -56,7 +56,7 @@ route('POST', '/api/boards', (_p, body) => Boards.create(body));
 route('GET', '/api/board', () => Boards.ensureDefault());          // default board, full
 route('GET', '/api/boards/:id', (p) => Boards.full(p.id));
 route('POST', '/api/columns/wip', (_p, body) => Boards.setWipLimit(body));   // { column, wip_limit, board_id?, actor? }
-route('GET', '/api/flow', (_p, _b, q) => Flow.summary({ days: q.days }));    // throughput / cycle time from the activity log
+route('GET', '/api/flow', (_p, _b, q) => Flow.summary({ days: q.days, actor: q.actor || undefined }));   // company flow, or one agent's
 
 // Tasks
 route('GET', '/api/tasks', (_p, _b, q) => Tasks.list(q));

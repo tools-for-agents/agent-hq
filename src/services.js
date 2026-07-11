@@ -138,12 +138,16 @@ export const Boards = {
 // now, not how long it took to get there.
 const DAY_MS = 86_400_000;
 export const Flow = {
-  summary({ days = 14 } = {}) {
+  // Pass `actor` for one agent's flow: what THEY started, what THEY finished, and
+  // what is still on their plate. Same question as the company's, asked of one.
+  summary({ days = 14, actor } = {}) {
     days = posInt(days, 14, 90);
     const since = new Date(Date.now() - (days - 1) * DAY_MS).toISOString().slice(0, 10);
-    const acts = all(`SELECT ts, type, entity_id, summary, data FROM activity
-                      WHERE entity='task' AND type IN ('task.created','task.moved') AND ts >= ?
-                      ORDER BY ts`, since);
+    let sql = `SELECT ts, type, entity_id, summary, data FROM activity
+               WHERE entity='task' AND type IN ('task.created','task.moved') AND ts >= ?`;
+    const args = [since];
+    if (actor) { sql += ` AND actor = ?`; args.push(actor); }
+    const acts = all(sql + ` ORDER BY ts`, ...args);
 
     // Did this move finish the task? Prefer the structured data we now record;
     // fall back to the summary for rows written before it existed.
@@ -184,11 +188,16 @@ export const Flow = {
         : Math.round((sorted[sorted.length / 2 - 1].hours + sorted[sorted.length / 2].hours) / 2 * 10) / 10)
       : null;
 
-    const wip = get(`SELECT COUNT(*) AS n FROM tasks t JOIN columns c ON c.id=t.column_id
-                     WHERE lower(c.name) != 'done'`).n;
+    // In flight = what is still open. For an agent, that means what is assigned to
+    // them — not what they touched.
+    const wip = actor
+      ? get(`SELECT COUNT(*) AS n FROM tasks t JOIN columns c ON c.id=t.column_id
+             WHERE lower(c.name) != 'done' AND t.assignee = ?`, actor).n
+      : get(`SELECT COUNT(*) AS n FROM tasks t JOIN columns c ON c.id=t.column_id
+             WHERE lower(c.name) != 'done'`).n;
 
     return {
-      days, by_day, created, done, wip,
+      days, actor: actor || null, by_day, created, done, wip,
       throughput_per_day: Math.round(done / days * 100) / 100,
       // >1 means the company is taking on work faster than it finishes it
       arrival_ratio: done ? Math.round(created / done * 100) / 100 : (created ? null : 0),

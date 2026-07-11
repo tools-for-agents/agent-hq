@@ -231,17 +231,40 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#tas
 // ── Agent-detail modal (reuses the same modal shell) ─────────────────────────
 async function openAgent(id) {
   const a = AGENTS[id]; if (!a) return;
-  const [mem, act, led] = await Promise.all([
+  const [mem, act, led, flow] = await Promise.all([
     api('/memory?agent_id=' + encodeURIComponent(id) + '&limit=100'),
     api('/activity?actor=' + encodeURIComponent(id) + '&limit=12'),
     api('/ledger'),
+    api('/flow?days=14&actor=' + encodeURIComponent(id)),
   ]);
   const authored = (Array.isArray(mem) ? mem : []).filter((m) => m.agent_id === id);   // exclude org-wide (NULL) memories
   const spend = (led.by_agent || []).find((x) => x.agent_id === id);
-  renderAgentModal(a, authored, Array.isArray(act) ? act : [], spend);
+  renderAgentModal(a, authored, Array.isArray(act) ? act : [], spend, flow);
   $('#task-modal').hidden = false;
 }
-function renderAgentModal(a, mems, acts, spend) {
+// Does this agent finish what it starts? The same question the Flow tab asks of
+// the company, asked of one agent — and the one that matters when an agent is
+// holding work nobody else can pick up.
+function agentFlowHtml(f) {
+  if (!f || (!f.created && !f.done && !f.wip)) return '';
+  const cyc = f.cycle && f.cycle.median_hours;
+  const cycTxt = cyc == null ? '—' : cyc < 1 ? `${Math.round(cyc * 60)}m` : cyc < 48 ? `${cyc}h` : `${(cyc / 24).toFixed(1)}d`;
+  const stalled = f.wip > 0 && f.done === 0;     // holding work, finishing none
+  const tile = (n, l, cls = '') => `<div class="afl ${cls}"><b>${n}</b><span>${l}</span></div>`;
+  return `<div class="tm-sec"><h4>Flow · last 14 days</h4>
+    <div class="aflow">
+      ${tile(f.done, 'finished', f.done ? 'good' : '')}
+      ${tile(f.created, 'started')}
+      ${tile(f.wip, 'in flight', stalled ? 'warn' : '')}
+      ${tile(cycTxt, 'median cycle')}
+    </div>
+    ${stalled ? '<div class="tm-desc empty">Holding work but finished nothing in this window.</div>' : ''}
+    ${f.slowest && f.slowest.length ? `<div class="ag-acts">${f.slowest.slice(0, 3).map((t) =>
+      `<div class="ag-act"><span class="t">${t.hours < 1 ? Math.round(t.hours * 60) + 'm' : t.hours < 48 ? t.hours + 'h' : (t.hours / 24).toFixed(1) + 'd'}</span><span class="s">${esc(t.title)}</span></div>`).join('')}</div>` : ''}
+  </div>`;
+}
+
+function renderAgentModal(a, mems, acts, spend, flow) {
   const pills = [
     `<span class="tm-pill status-${esc(a.status)}"><span class="pd"></span>${esc(a.status)}</span>`,
     `<span class="tm-pill">${esc(a.role)}</span>`,
@@ -253,6 +276,7 @@ function renderAgentModal(a, mems, acts, spend) {
     <h3 class="tm-h" id="tm-title">${a.avatar || '🤖'} ${esc(a.name)}</h3>
     <div class="tm-pills">${pills}</div>
     ${a.current_task ? `<div class="tm-sec"><h4>Current task</h4><div class="tm-desc">▶ ${esc(a.current_task)}</div></div>` : ''}
+    ${agentFlowHtml(flow)}
     <div class="tm-sec"><h4>Memories authored${mems.length ? ' · ' + mems.length : ''}</h4>${memRows ? `<div class="ag-list">${memRows}</div>` : '<div class="tm-desc empty">None authored yet.</div>'}</div>
     <div class="tm-sec"><h4>Recent activity</h4>${actRows ? `<div class="ag-acts">${actRows}</div>` : '<div class="tm-desc empty">No activity yet.</div>'}</div>
     <div class="tm-foot">
