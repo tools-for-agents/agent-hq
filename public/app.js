@@ -59,6 +59,7 @@ async function renderBoard() {
     if (t.assignee) aset.add(t.assignee);
     (t.labels || []).forEach((l) => lset.add(l));
   }
+  BOARD_COLUMNS = b.columns;                       // the new-task picker shows each column's WIP state
   boardAssignees = [...aset]; boardLabels = [...lset].sort();
   if (boardAssignee && !aset.has(boardAssignee)) boardAssignee = null;   // filtered entity gone → reset
   if (boardLabel && !lset.has(boardLabel)) boardLabel = null;
@@ -90,6 +91,72 @@ function card(t) {
     </div>
   </div>`;
 }
+
+// ── New task ────────────────────────────────────────────────────────────────
+// The board could be filtered and read, but not added to: tasks only came from an
+// agent or the CLI. A human overseeing the company could see the work and not put
+// work in. Note the column picker shows each column's WIP state — and if you aim a
+// task at a full column, the server refuses and we say exactly why.
+let BOARD_COLUMNS = [];
+function openNewTask() {
+  const col = $('#nt-col'), ag = $('#nt-agent');
+  col.innerHTML = BOARD_COLUMNS.map((c) => {
+    const full = c.at_limit ? ' — full' : '';
+    const cap = c.wip_limit != null ? ` (${c.tasks.length}/${c.wip_limit}${full})` : '';
+    return `<option value="${esc(c.name)}">${esc(c.name)}${cap}</option>`;
+  }).join('');
+  ag.innerHTML = '<option value="">— unassigned —</option>' +
+    Object.values(AGENTS).map((a) => `<option value="${esc(a.id)}">${a.avatar} ${esc(a.name)}</option>`).join('');
+  $('#nt-title').value = ''; $('#nt-desc').value = ''; $('#nt-labels').value = '';
+  $('#nt-prio').value = 'medium';
+  $('#nt-err').hidden = true;
+  $('#nt-modal').hidden = false;
+  setTimeout(() => $('#nt-title').focus(), 30);
+}
+function closeNewTask() { $('#nt-modal').hidden = true; }
+
+async function createTask(force = false) {
+  const btn = $('#nt-go'), err = $('#nt-err');
+  const title = $('#nt-title').value.trim();
+  if (!title) { err.textContent = 'a task needs a title'; err.hidden = false; return; }
+  btn.disabled = true; btn.textContent = 'creating…'; err.hidden = true;
+  try {
+    const res = await fetch('/api/tasks', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title,
+        description: $('#nt-desc').value.trim(),
+        column: $('#nt-col').value,
+        assignee: $('#nt-agent').value || null,
+        priority: $('#nt-prio').value,
+        labels: $('#nt-labels').value.split(',').map((l) => l.trim()).filter(Boolean),
+        force,
+      }),
+    });
+    const r = await res.json();
+    if (!res.ok || r.error) throw new Error(r.error || 'could not create that task');
+    closeNewTask();
+    await renderBoard();
+  } catch (e) {
+    // A WIP limit refusing the task is the system working, not a failure to hide.
+    // Say which column is full — but "pass force:true" is an instruction to an API,
+    // not to a person, so offer it as the button it actually is.
+    const msg = String(e.message || e);
+    const wip = /WIP limit/.test(msg);
+    err.innerHTML = esc(msg.replace(/\s*—\s*finish or move a task out first, or pass force:true/, ''))
+      + (wip ? `<div class="nt-over">Pick a column with room — or <button type="button" class="nt-force" data-force>create it anyway</button>.</div>` : '');
+    err.hidden = false;
+  } finally { btn.disabled = false; btn.textContent = 'create task'; }
+}
+$('#newTaskBtn').addEventListener('click', openNewTask);
+$('#nt-x').addEventListener('click', closeNewTask);
+$('#nt-go').addEventListener('click', () => createTask(false));
+$('#nt-err').addEventListener('click', (e) => { if (e.target.closest('[data-force]')) createTask(true); });
+$('#nt-modal').addEventListener('click', (e) => { if (e.target.id === 'nt-modal') closeNewTask(); });
+$('#nt-modal').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeNewTask();
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); createTask(); }
+});
 
 // ── Flow: is the company finishing what it starts? ───────────────────────────
 async function renderFlow() {

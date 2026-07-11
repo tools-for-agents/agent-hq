@@ -341,3 +341,42 @@ test('Flow: one agent\'s flow is their own — what they finished, and what they
   assert.equal(Flow.summary({ actor: alice }).done, 1, 'alice is not');
   assert.equal(Flow.summary({ actor: alice }).wip, 0, 'and alice now holds nothing open');
 });
+
+// ── HTTP layer: the dashboard's new-task form posts here, and depends on the
+// server telling it the truth when a WIP limit refuses the task.
+const { createHqServer } = await import('../src/server.js');
+
+test('serve: POST /api/tasks creates a task — and says so when a WIP limit refuses it', async () => {
+  const server = createHqServer();
+  await new Promise((r) => server.listen(0, r));
+  const base = `http://localhost:${server.address().port}`;
+  const post = (body) => fetch(base + '/api/tasks', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  try {
+    const bid = newBoard();
+    const made = await post({ board_id: bid, column: 'Todo', title: 'from the dashboard',
+      priority: 'high', labels: ['ops'] }).then((r) => r.json());
+    assert.equal(made.title, 'from the dashboard');
+    assert.equal(made.priority, 'high');
+    assert.deepEqual(made.labels, ['ops']);
+    assert.equal(Tasks.list({ board_id: bid }).find((t) => t.id === made.id).column_name, 'Todo');
+
+    // cap the column, fill it, then aim another task at it
+    Boards.setWipLimit({ board_id: bid, column: 'Review', wip_limit: 1 });
+    await post({ board_id: bid, column: 'Review', title: 'fills review' });
+
+    const refused = await post({ board_id: bid, column: 'Review', title: 'one too many' });
+    assert.equal(refused.status, 400, 'the server refuses it');
+    const body = await refused.json();
+    // the form shows this string verbatim — it has to name the column and the cap
+    assert.match(body.error, /Review/);
+    assert.match(body.error, /WIP limit \(1\/1\)/);
+    assert.ok(!Tasks.list({ board_id: bid }).some((t) => t.title === 'one too many'),
+      'and the task really was not created');
+
+    // aiming it somewhere with room works — which is what the error tells you to do
+    const ok = await post({ board_id: bid, column: 'Todo', title: 'one too many' }).then((r) => r.json());
+    assert.ok(ok.id);
+  } finally { server.close(); }
+});

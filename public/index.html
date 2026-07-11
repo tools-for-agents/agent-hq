@@ -33,7 +33,10 @@
 
   <main>
     <section id="view-board" class="view active">
-      <div class="board-filter" id="board-filter" hidden></div>
+      <div class="board-head">
+        <button class="new-task" id="newTaskBtn">＋ new task</button>
+        <div class="board-filter" id="board-filter" hidden></div>
+      </div>
       <div class="board" id="board"></div>
     </section>
 
@@ -117,6 +120,30 @@
     <div class="ticker-head">📡 Live feed</div>
     <ul class="feed" id="activity-mini"></ul>
   </aside>
+
+  <div id="nt-modal" class="modal-backdrop" hidden>
+    <div class="modal nt" role="dialog" aria-modal="true" aria-label="New task">
+      <button class="nt-x" id="nt-x" aria-label="Close">×</button>
+      <h3 class="nt-h">📌 New task</h3>
+      <input id="nt-title" class="nt-in" placeholder="what needs doing…" maxlength="140" aria-label="Task title" />
+      <textarea id="nt-desc" class="nt-in nt-ta" placeholder="description (optional)" aria-label="Task description"></textarea>
+      <div class="nt-row">
+        <label class="nt-f"><span>column</span><select id="nt-col" aria-label="Column"></select></label>
+        <label class="nt-f"><span>assignee</span><select id="nt-agent" aria-label="Assignee"></select></label>
+      </div>
+      <div class="nt-row">
+        <label class="nt-f"><span>priority</span><select id="nt-prio" aria-label="Priority">
+          <option value="low">low</option><option value="medium" selected>medium</option>
+          <option value="high">high</option><option value="urgent">urgent</option></select></label>
+        <label class="nt-f"><span>labels</span><input id="nt-labels" class="nt-in" placeholder="comma, separated" aria-label="Labels" /></label>
+      </div>
+      <div class="nt-err" id="nt-err" hidden></div>
+      <div class="nt-foot">
+        <span class="nt-hint">⌘⏎ to create</span>
+        <button class="nt-go" id="nt-go">create task</button>
+      </div>
+    </div>
+  </div>
 
   <div id="task-modal" class="modal-backdrop" hidden>
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="tm-title">

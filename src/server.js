@@ -2,7 +2,7 @@
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { dirname, join, extname, normalize } from 'node:path';
+import { dirname, join, extname, normalize, resolve } from 'node:path';
 import { Agents, Boards, Tasks, Memory, Messages, Ledger, Activity, Stats, Graph, Flow } from './services.js';
 import { addClient } from './events.js';
 
@@ -114,7 +114,10 @@ async function serveStatic(req, res, pathname) {
   }
 }
 
-const server = createServer(async (req, res) => {
+// The bare server, so a test can listen on an ephemeral port and close it. The
+// reaper and the port binding belong to serve(), not to importing this file.
+export function createHqServer() {
+  return createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const { pathname } = url;
 
@@ -160,13 +163,21 @@ const server = createServer(async (req, res) => {
     return json(res, 404, { error: `no route ${req.method} ${pathname}` });
   }
 
-  return serveStatic(req, res, pathname);
-});
+    return serveStatic(req, res, pathname);
+  });
+}
 
-server.listen(PORT, () => {
-  Boards.ensureDefault();
-  // Keep the board honest: agents that stop sending heartbeats go offline.
-  const STALE_MS = +(process.env.HQ_STALE_MS || 90_000);
-  setInterval(() => { try { Agents.reapStale(STALE_MS); } catch {} }, 30_000);
-  console.log(`\n  ▟ Agent HQ running → http://localhost:${PORT}\n`);
-});
+export function serve({ port = PORT } = {}) {
+  const server = createHqServer();
+  server.listen(port, () => {
+    Boards.ensureDefault();
+    // Keep the board honest: agents that stop sending heartbeats go offline.
+    const STALE_MS = +(process.env.HQ_STALE_MS || 90_000);
+    setInterval(() => { try { Agents.reapStale(STALE_MS); } catch {} }, 30_000);
+    console.log(`\n  ▟ Agent HQ running → http://localhost:${port}\n`);
+  });
+  return server;
+}
+
+// `node src/server.js` (npm start, the Dockerfile CMD) still just runs it.
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) serve();
