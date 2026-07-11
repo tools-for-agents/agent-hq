@@ -463,3 +463,37 @@ test('messages: the feed says who has actually read it, not just who it was sent
   assert.equal(bc4.read_count, bc4.audience_count, 'now it is read by everyone');
   assert.equal(bc4.unread_by.length, 0);
 });
+
+test('ledger: spend by model — the rate you can act on, not just the total', () => {
+  const before = Ledger.summary();
+  const costOfModel = (m) => (Ledger.summary().by_model.find((x) => x.model === m) || {});
+
+  // an expensive model doing a little, and a cheap one doing a lot
+  Ledger.record({ model: 'claude-opus-4-8', input_tokens: 1000, output_tokens: 1000, cost_usd: 0.09 });
+  Ledger.record({ model: 'claude-opus-4-8', input_tokens: 1000, output_tokens: 0, cost_usd: 0.03 });
+  Ledger.record({ model: 'claude-haiku-4-5', input_tokens: 100000, output_tokens: 20000, cost_usd: 0.12 });
+
+  const opus = costOfModel('claude-opus-4-8');
+  const haiku = costOfModel('claude-haiku-4-5');
+
+  assert.equal(opus.runs, 2, 'runs are grouped by model');
+  assert.ok(Math.abs(opus.cost_usd - 0.12) < 1e-6);
+  assert.equal(opus.input_tokens + opus.output_tokens, 3000, 'and carry their tokens, so a rate can be computed');
+  assert.equal(haiku.input_tokens + haiku.output_tokens, 120000);
+
+  // the point of the feature: the two models cost the SAME in total, and wildly
+  // different per token — which is the number you can actually do something about
+  const rate = (m) => (m.cost_usd / (m.input_tokens + m.output_tokens)) * 1000;
+  assert.ok(Math.abs(opus.cost_usd - haiku.cost_usd) < 1e-6, 'same total spend');
+  assert.ok(rate(opus) > rate(haiku) * 10, 'but a wildly different cost per token');
+
+  // a run with no model recorded still shows up, rather than silently vanishing
+  Ledger.record({ input_tokens: 10, output_tokens: 10, cost_usd: 0.001 });
+  assert.ok(Ledger.summary().by_model.some((m) => m.model === 'unknown'), 'unattributed spend is still spend');
+
+  // and the totals still reconcile with the per-model rows
+  const s = Ledger.summary();
+  const sum = s.by_model.reduce((a, m) => a + m.cost_usd, 0);
+  assert.ok(Math.abs(sum - s.total_cost_usd) < 1e-6, 'the model rows add up to the total');
+  assert.ok(s.total_runs > before.total_runs);
+});

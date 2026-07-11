@@ -395,6 +395,31 @@ function spendSparkline(series, total) {
   </div>`;
 }
 
+// Spend by MODEL. The ledger has always computed it (and the price table) and the
+// dashboard only ever showed spend by agent. Who spent is a fact about your team;
+// what it cost per token is a fact you can act on — an expensive model doing cheap
+// work is the one line item you can actually change.
+function byModelHtml(l) {
+  const models = (l.by_model || []).filter((m) => m.runs);
+  if (!models.length) return '';
+  const max = Math.max(0.000001, ...models.map((m) => m.cost_usd));
+  const prices = l.prices || {};
+
+  const rows = models.map((m) => {
+    const tokens = (m.input_tokens || 0) + (m.output_tokens || 0);
+    const per1k = tokens ? (m.cost_usd / tokens) * 1000 : 0;   // what this model actually costs you
+    const p = prices[m.model];
+    return `<div class="la">
+      <div class="la-name">${esc(m.model)}${p ? `<span class="mprice" title="list price per 1M tokens">$${p.in}/$${p.out} per 1M</span>` : ''}</div>
+      <div class="bar"><div class="fill model" style="width:${(m.cost_usd / max * 100).toFixed(1)}%"></div></div>
+      <div class="la-fig">${usd(m.cost_usd)} · ${fmtTok(tokens)} tok · ${m.runs} run${m.runs === 1 ? '' : 's'}
+        ${tokens ? `<b class="rate">${usd(per1k)}/1k tok</b>` : ''}</div>
+    </div>`;
+  }).join('');
+
+  return `<h3 class="lh">Spend by model</h3><div class="ledger-agents">${rows}</div>`;
+}
+
 async function renderLedger() {
   const l = await api('/ledger');
   const runs = await api('/runs?limit=40');
@@ -417,6 +442,7 @@ async function renderLedger() {
           <div class="la-fig">${usd(a.cost_usd)} · ${fmtTok(a.input_tokens + a.output_tokens)} tok · ${a.runs} runs</div>
         </div>`).join('') : '<div class="empty">No runs recorded yet.</div>'}
     </div>
+    ${byModelHtml(l)}
     <h3 class="lh">Recent runs</h3>
     <div class="runs">
       ${runs.length ? runs.map((r) => {

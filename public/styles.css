@@ -486,3 +486,8 @@ main { grid-area: main; overflow: auto; padding: 18px 22px; }
 .msg .mr.none .mr-n { color: var(--muted); }
 .msg .rcp { font-size: 13px; line-height: 1; }
 .msg .rcp.waiting { filter: grayscale(1); opacity: .38; }
+
+/* Spend by model — who spent is a fact about the team; what it costs per token is a fact you can act on */
+.ledger-agents .bar .fill.model { background: linear-gradient(90deg, var(--accent-2), var(--accent)); }
+.la-name .mprice { margin-left: 8px; font-size: 10px; color: var(--muted); font-family: ui-monospace, monospace; }
+.la-fig .rate { margin-left: 8px; color: var(--amber); }

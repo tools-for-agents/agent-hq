@@ -608,7 +608,10 @@ export const Ledger = {
         COALESCE(SUM(r.output_tokens),0) output_tokens, COALESCE(SUM(r.cost_usd),0) cost_usd
       FROM runs r LEFT JOIN agents a ON a.id=r.agent_id
       GROUP BY r.agent_id ORDER BY cost_usd DESC`);
+    // Tokens per model too, so the dashboard can show the rate that actually
+    // matters — what a model costs you PER TOKEN — not just who spent the most.
     const byModel = all(`SELECT COALESCE(model,'unknown') model, COUNT(*) runs,
+        COALESCE(SUM(input_tokens),0) input_tokens, COALESCE(SUM(output_tokens),0) output_tokens,
         COALESCE(SUM(cost_usd),0) cost_usd FROM runs GROUP BY model ORDER BY cost_usd DESC`);
     // Chronological per-run spend — the dashboard accumulates it into a sparkline.
     const spendSeries = all(`SELECT started_at, COALESCE(cost_usd,0) cost_usd,
