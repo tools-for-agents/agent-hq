@@ -380,3 +380,41 @@ test('serve: POST /api/tasks creates a task — and says so when a WIP limit ref
     assert.ok(ok.id);
   } finally { server.close(); }
 });
+
+test('the board says what is blocked — and what finishing would free', () => {
+  const bid = newBoard();
+  const found = Tasks.create({ board_id: bid, column: 'Todo', title: 'foundation' });
+  const a = Tasks.create({ board_id: bid, column: 'Todo', title: 'waits on foundation' });
+  const b = Tasks.create({ board_id: bid, column: 'Todo', title: 'also waits on foundation' });
+  Tasks.addDep(a.id, found.id);
+  Tasks.addDep(b.id, found.id);
+
+  const cardsOf = (board) => Object.fromEntries(board.columns.flatMap((c) => c.tasks).map((t) => [t.id, t]));
+
+  let cards = cardsOf(Boards.full(bid));
+  assert.equal(cards[a.id].blocked, true, 'a task waiting on an unfinished task is blocked');
+  assert.deepEqual(cards[a.id].blocked_by, [found.id], 'and says what it is waiting on');
+  assert.equal(cards[b.id].blocked, true);
+  // the other side: finishing the foundation frees both
+  assert.equal(cards[found.id].blocked, false, 'the foundation itself is ready');
+  assert.equal(cards[found.id].blocks, 2, 'and two tasks are waiting on it');
+  assert.equal(cards[a.id].blocks, 0);
+
+  // the board agrees with who actually gets handed work
+  assert.equal(Tasks.next('w1', { board_id: bid }).task.id, found.id, 'only the unblocked task is handed out');
+
+  // finish it — both dependants become startable, and nothing is waiting any more
+  Tasks.update(found.id, { column: 'Done' });
+  cards = cardsOf(Boards.full(bid));
+  assert.equal(cards[a.id].blocked, false, 'the blocker is Done, so the task is startable');
+  assert.equal(cards[b.id].blocked, false);
+  assert.equal(cards[found.id].blocks, 0, 'a finished task holds nobody up');
+
+  // a dependency on a task that no longer exists cannot block forever
+  const c = Tasks.create({ board_id: bid, column: 'Todo', title: 'waits on a ghost' });
+  const doomed = Tasks.create({ board_id: bid, column: 'Todo', title: 'about to be deleted' });
+  Tasks.addDep(c.id, doomed.id);
+  assert.equal(cardsOf(Boards.full(bid))[c.id].blocked, true);
+  Tasks.remove(doomed.id);
+  assert.equal(cardsOf(Boards.full(bid))[c.id].blocked, false, 'a deleted blocker does not block forever');
+});

@@ -97,10 +97,41 @@ export const Boards = {
   full(id) {
     const board = get(`SELECT * FROM boards WHERE id=?`, id);
     if (!board) return null;
+
+    // Dependencies decide what can actually be worked — Tasks.next already refuses
+    // to hand out a blocked task — but the board never said so: a task waiting on
+    // three others looked exactly like one you could start now. Resolve the whole
+    // dependency picture once, for every card.
+    const doneCols = new Set(all(`SELECT id FROM columns WHERE board_id=? AND lower(name)='done'`, id).map((c) => c.id));
+    const colOf = new Map(all(`SELECT id, column_id, title FROM tasks WHERE board_id=?`, id)
+      .map((t) => [t.id, { column_id: t.column_id, title: t.title }]));
+    const isDone = (tid) => { const t = colOf.get(tid); return !t || doneCols.has(t.column_id); };   // a dep that no longer exists can't block
+
+    const depsOf = new Map(), blocksCount = new Map();
+    for (const d of all(`SELECT task_id, depends_on FROM task_deps`)) {
+      if (!colOf.has(d.task_id)) continue;                       // another board's task
+      if (!depsOf.has(d.task_id)) depsOf.set(d.task_id, []);
+      depsOf.get(d.task_id).push(d.depends_on);
+      if (!isDone(d.depends_on)) blocksCount.set(d.depends_on, (blocksCount.get(d.depends_on) || 0) + 1);
+    }
+
     board.columns = all(`SELECT * FROM columns WHERE board_id=? ORDER BY position`, id);
     for (const col of board.columns) {
       col.tasks = all(`SELECT * FROM tasks WHERE column_id=? ORDER BY position, created_at`, col.id)
-        .map((t) => parse(t, 'labels'));
+        .map((t) => parse(t, 'labels'))
+        .map((t) => {
+          const deps = depsOf.get(t.id) || [];
+          const blockers = deps.filter((d) => !isDone(d));
+          return {
+            ...t,
+            deps,
+            blocked_by: blockers,                                 // what this task is waiting on, right now
+            blocked: blockers.length > 0,
+            // …and the other side of it: finishing this unblocks that many others.
+            // A task nobody can start until you finish it is the one to do next.
+            blocks: blocksCount.get(t.id) || 0,
+          };
+        });
       // Surface the WIP state so every consumer — dashboard, MCP, an agent
       // deciding what to pick up — sees a column that is full without counting.
       col.at_limit = col.wip_limit != null && col.tasks.length >= col.wip_limit;

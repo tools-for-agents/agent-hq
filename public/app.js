@@ -82,9 +82,20 @@ function card(t) {
   const a = AGENTS[t.assignee];
   const labels = (t.labels || []).map((l) => `<span class="label">${esc(l)}</span>`).join('');
   const leased = t.lease_until && new Date(t.lease_until) > new Date();
-  return `<div class="card p-${esc(t.priority)}${leased ? ' claimed' : ''}" data-task="${esc(t.id)}" data-assignee="${esc(t.assignee || '')}" data-labels="${esc(JSON.stringify(t.labels || []))}" role="button" tabindex="0" title="View task details">
+  // Blocked work can't be started — no agent will be handed it — so it should not
+  // look like work you can start. And a task that other tasks are waiting on is the
+  // one worth doing next: say how many it would free.
+  const n = (t.blocked_by || []).length;
+  const wait = n
+    ? `<span class="chip blocked" title="${esc((t.blocked_by || []).map((d) => TASK_INDEX[d]?.title || d).join(' · '))}">⛔ blocked by ${n}</span>`
+    : '';
+  const frees = t.blocks
+    ? `<span class="chip frees" title="Finishing this unblocks ${t.blocks} task${t.blocks === 1 ? '' : 's'}">🔑 frees ${t.blocks}</span>`
+    : '';
+  return `<div class="card p-${esc(t.priority)}${leased ? ' claimed' : ''}${t.blocked ? ' blocked' : ''}" data-task="${esc(t.id)}" data-assignee="${esc(t.assignee || '')}" data-labels="${esc(JSON.stringify(t.labels || []))}" role="button" tabindex="0" title="View task details">
     <div class="title">${leased ? '🔒 ' : ''}${esc(t.title)}</div>
     <div class="meta">
+      ${wait}${frees}
       ${a ? `<span class="chip assignee">${a.avatar} ${esc(a.name)}</span>` : ''}
       <span class="chip">${esc(t.priority)}</span>
       ${labels}
