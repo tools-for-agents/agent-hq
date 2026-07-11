@@ -12,3 +12,25 @@ jobs:
         with:
           node-version: '24'
       - run: node --test
+
+  # Looking is part of the build now. This tool shipped a phone layout that dragged
+  # the page 250px sideways, and controls at 2.4:1, past a green `node --test` — a
+  # test suite does not look at the page. iris does: phone, tablet and desktop, in
+  # both themes, and it fails here rather than in front of someone.
+  look:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Serve it
+        run: |
+          npm run seed || true
+          PORT=7700 node src/server.js &
+          for i in $(seq 30); do curl -sf http://localhost:7700/ >/dev/null && break; sleep 1; done
+      - uses: tools-for-agents/iris@main
+        with:
+          url: http://localhost:7700/
+          viewports: phone,tablet,desktop
+          name: agent-hq
