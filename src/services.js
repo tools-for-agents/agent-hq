@@ -101,8 +101,27 @@ export const Boards = {
     for (const col of board.columns) {
       col.tasks = all(`SELECT * FROM tasks WHERE column_id=? ORDER BY position, created_at`, col.id)
         .map((t) => parse(t, 'labels'));
+      // Surface the WIP state so every consumer — dashboard, MCP, an agent
+      // deciding what to pick up — sees a column that is full without counting.
+      col.at_limit = col.wip_limit != null && col.tasks.length >= col.wip_limit;
+      col.over_limit = col.wip_limit != null && col.tasks.length > col.wip_limit;
     }
     return board;
+  },
+
+  // A WIP limit caps how many tasks may sit in a column at once — the whole point
+  // of kanban: finish work before starting more. Pass null (or 0) to lift it.
+  setWipLimit({ board_id, column, wip_limit, actor = null }) {
+    const bid = board_id || Boards.ensureDefault().id;
+    const col = columnByName(bid, column);
+    if (!col) throw new Error('column not found');
+    const limit = wip_limit == null || +wip_limit <= 0 ? null : posInt(wip_limit, null, 999);
+    if (wip_limit != null && +wip_limit > 0 && limit == null) throw new Error('wip_limit must be a positive integer');
+    run(`UPDATE columns SET wip_limit=? WHERE id=?`, limit, col.id);
+    const n = colCount(col.id);
+    emit(logActivity({ actor, type: 'column.wip', entity: 'column', entity_id: col.id,
+      summary: limit == null ? `🚦 WIP limit lifted on ${col.name}` : `🚦 WIP limit on ${col.name} set to ${limit} (${n} now)` }));
+    return { ...col, wip_limit: limit, tasks: n, at_limit: limit != null && n >= limit, over_limit: limit != null && n > limit };
   },
 
   // Returns the first board, creating a default company board if none exist.
@@ -114,6 +133,19 @@ export const Boards = {
 };
 
 // ── Tasks ──────────────────────────────────────────────────────────────────
+const colCount = (column_id) => get(`SELECT COUNT(*) AS n FROM tasks WHERE column_id=?`, column_id).n;
+
+// Refuse to put another task into a column that is already at its WIP limit.
+// Columns have no limit by default, so this is inert until a board opts in — and
+// `force` is always available for the case where a human (or an agent) means it.
+function assertWip(col, force = false) {
+  if (force || !col || col.wip_limit == null) return;
+  const n = colCount(col.id);
+  if (n >= col.wip_limit) {
+    throw new Error(`column "${col.name}" is at its WIP limit (${n}/${col.wip_limit}) — finish or move a task out first, or pass force:true`);
+  }
+}
+
 function columnByName(board_id, name) {
   return get(`SELECT * FROM columns WHERE board_id=? AND lower(name)=lower(?)`, board_id, name);
 }
@@ -137,11 +169,12 @@ export const Tasks = {
     return all(sql, ...args).map((t) => parse(t, 'labels'));
   },
 
-  create({ board_id, column, title, description = '', assignee = null, priority = 'medium', labels = [], created_by = null }) {
+  create({ board_id, column, title, description = '', assignee = null, priority = 'medium', labels = [], created_by = null, force = false }) {
     const board = board_id ? get(`SELECT * FROM boards WHERE id=?`, board_id) : Boards.ensureDefault();
     const bid = board.id;
     let col = column ? columnByName(bid, column) : null;
     if (!col) col = get(`SELECT * FROM columns WHERE board_id=? ORDER BY position LIMIT 1`, bid);
+    assertWip(col, force);
     const id = uid('tsk_');
     const pos = (get(`SELECT COALESCE(MAX(position),0)+1 AS p FROM tasks WHERE column_id=?`, col.id)).p;
     run(`INSERT INTO tasks (id,board_id,column_id,title,description,assignee,priority,labels,position,created_by,created_at,updated_at)
@@ -161,6 +194,7 @@ export const Tasks = {
     if (patch.column || patch.status) {
       const col = columnByName(t.board_id, patch.column || patch.status);
       if (col && col.id !== t.column_id) {
+        assertWip(col, patch.force);        // moving INTO a full column is the case WIP limits exist to stop
         const pos = (get(`SELECT COALESCE(MAX(position),0)+1 AS p FROM tasks WHERE column_id=?`, col.id)).p;
         run(`UPDATE tasks SET column_id=?, position=? WHERE id=?`, col.id, pos, id);
         columnChange = col.name;

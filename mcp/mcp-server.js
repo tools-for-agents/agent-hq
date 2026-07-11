@@ -117,7 +117,23 @@ const tools = [
       },
       required: ['task_id', 'to_column'],
     },
-    run: (a) => hq('PATCH', `/api/tasks/${a.task_id}`, { column: a.to_column, _actor: a.actor }),
+    run: (a) => hq('PATCH', `/api/tasks/${a.task_id}`, { column: a.to_column, _actor: a.actor, force: a.force }),
+  },
+  {
+    name: 'kanban_set_wip_limit',
+    description: 'Cap how many tasks may sit in a column at once (the kanban guardrail: finish work before starting more). '
+      + 'Once set, creating or moving a task into a full column is refused — pass force:true to override. Omit wip_limit (or pass 0) to lift the cap.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        column: { type: 'string', description: 'Column name, e.g. "In Progress"' },
+        wip_limit: { type: 'number', description: 'Max tasks allowed in the column; 0 or omitted lifts the limit' },
+        board_id: { type: 'string' },
+        actor: { type: 'string', description: 'Your agent id' },
+      },
+      required: ['column'],
+    },
+    run: (a) => hq('POST', '/api/columns/wip', { column: a.column, wip_limit: a.wip_limit ?? null, board_id: a.board_id, actor: a.actor }),
   },
   {
     name: 'kanban_update_task',

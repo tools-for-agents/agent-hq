@@ -66,6 +66,12 @@ main { grid-area: main; overflow: auto; padding: 18px 22px; }
 .column { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); width: 270px; flex: 0 0 auto; display: flex; flex-direction: column; max-height: 78vh; }
 .column h3 { margin: 0; padding: 12px 14px; font-size: 13px; display: flex; justify-content: space-between; border-bottom: 1px solid var(--line); position: sticky; top: 0; }
 .column h3 .count { color: var(--muted); background: var(--panel-2); border-radius: 20px; padding: 0 8px; font-size: 11px; }
+/* WIP limits: a column at its cap goes amber, one past it goes red — the board
+   should look wrong when the collective is starting more than it finishes. */
+.column h3 .count.at { color: #f5a623; background: rgba(245,166,35,.14); box-shadow: inset 0 0 0 1px rgba(245,166,35,.4); }
+.column h3 .count.over { color: #ff6b6b; background: rgba(255,107,107,.16); box-shadow: inset 0 0 0 1px rgba(255,107,107,.5); }
+.column.wip-over { box-shadow: inset 0 0 0 1px rgba(255,107,107,.35); }
+.column h3 .wip-flag { font-size: 10px; color: #ff6b6b; letter-spacing: .4px; }
 .col-body { padding: 10px; overflow: auto; display: flex; flex-direction: column; gap: 9px; }
 .card { background: var(--panel-2); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 9px; padding: 10px 11px; box-shadow: var(--shadow); transition: transform .08s; }
 .card:hover { transform: translateY(-1px); border-color: var(--accent); }

@@ -219,3 +219,47 @@ test('list/summary functions coerce a bad limit/top — closes the input-robustn
   // a valid small limit is still honoured
   assert.ok(Messages.recent(1).length <= 1, 'a valid small limit is respected');
 });
+
+test('a WIP limit stops a column taking on more work than it can finish', () => {
+  const bid = newBoard();
+  const t1 = Tasks.create({ board_id: bid, column: 'Todo', title: 'one' });
+  const t2 = Tasks.create({ board_id: bid, column: 'Todo', title: 'two' });
+  const t3 = Tasks.create({ board_id: bid, column: 'Todo', title: 'three' });
+
+  // no limit by default — a column takes whatever it is given
+  Tasks.update(t1.id, { column: 'In Progress' });
+  Tasks.update(t2.id, { column: 'In Progress' });
+
+  const col = Boards.setWipLimit({ board_id: bid, column: 'In Progress', wip_limit: 2 });
+  assert.equal(col.wip_limit, 2);
+  assert.equal(col.at_limit, true, 'two tasks against a limit of two is AT the limit');
+  assert.equal(col.over_limit, false);
+
+  // the third task cannot join a full column…
+  assert.throws(() => Tasks.update(t3.id, { column: 'In Progress' }), /WIP limit \(2\/2\)/);
+  const colOf = (id) => Tasks.list({ board_id: bid }).find((t) => t.id === id).column_name;
+  assert.equal(colOf(t3.id), 'Todo', 'the refused task did not move');
+  // …nor can a new one be created straight into it
+  assert.throws(() => Tasks.create({ board_id: bid, column: 'In Progress', title: 'four' }), /WIP limit/);
+
+  // force is the escape hatch, and it puts the column OVER its limit
+  Tasks.update(t3.id, { column: 'In Progress', force: true });
+  const board = Boards.full(bid);
+  const ip = board.columns.find((c) => c.name === 'In Progress');
+  assert.equal(ip.tasks.length, 3);
+  assert.equal(ip.over_limit, true, 'the board reports the column as over its limit');
+
+  // finishing work frees the column up again
+  Tasks.update(t1.id, { column: 'Done' });
+  Tasks.update(t2.id, { column: 'Done' });
+  assert.equal(Boards.full(bid).columns.find((c) => c.name === 'In Progress').over_limit, false);
+  const t5 = Tasks.create({ board_id: bid, column: 'In Progress', title: 'five' });
+  assert.equal(colOf(t5.id), 'In Progress', 'room again, so the task lands');
+
+  // lifting the limit removes the guard entirely
+  assert.equal(Boards.setWipLimit({ board_id: bid, column: 'In Progress', wip_limit: 0 }).wip_limit, null);
+  Tasks.create({ board_id: bid, column: 'In Progress', title: 'six' });
+  const lifted = Boards.full(bid).columns.find((c) => c.name === 'In Progress');
+  assert.equal(lifted.at_limit, false);
+  assert.equal(lifted.wip_limit, null);
+});

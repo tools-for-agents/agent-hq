@@ -55,6 +55,7 @@ route('GET', '/api/boards', () => Boards.list());
 route('POST', '/api/boards', (_p, body) => Boards.create(body));
 route('GET', '/api/board', () => Boards.ensureDefault());          // default board, full
 route('GET', '/api/boards/:id', (p) => Boards.full(p.id));
+route('POST', '/api/columns/wip', (_p, body) => Boards.setWipLimit(body));   // { column, wip_limit, board_id?, actor? }
 
 // Tasks
 route('GET', '/api/tasks', (_p, _b, q) => Tasks.list(q));

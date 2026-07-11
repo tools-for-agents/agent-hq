@@ -62,8 +62,12 @@ async function renderBoard() {
   if (boardAssignee && !aset.has(boardAssignee)) boardAssignee = null;   // filtered entity gone → reset
   if (boardLabel && !lset.has(boardLabel)) boardLabel = null;
   $('#board').innerHTML = b.columns.map((col) => `
-    <div class="column">
-      <h3>${esc(col.name)} <span class="count">${col.tasks.length}</span></h3>
+    <div class="column${col.over_limit ? ' wip-over' : ''}">
+      <h3>
+        <span>${esc(col.name)}${col.over_limit ? ' <span class="wip-flag">OVER WIP</span>' : ''}</span>
+        <span class="count${col.over_limit ? ' over' : col.at_limit ? ' at' : ''}"
+              ${col.wip_limit != null ? `title="WIP limit ${col.wip_limit}"` : ''}><span class="n">${col.tasks.length}</span>${col.wip_limit != null ? `<span class="cap"> / ${col.wip_limit}</span>` : ''}</span>
+      </h3>
       <div class="col-body">
         ${col.tasks.map(card).join('') || '<div class="empty" style="padding:14px">—</div>'}
       </div>
@@ -108,8 +112,16 @@ function applyBoardFilter() {
       if (boardLabel) { try { okL = JSON.parse(c.dataset.labels || '[]').includes(boardLabel); } catch { okL = false; } }
       const vis = okA && okL; c.classList.toggle('filtered-out', !vis); if (vis) shown++;
     });
+    // Write only the number: the WIP cap (" / 4") is a sibling span, so filtering
+    // can't stomp it. While a filter is on, the count means shown/total, so the
+    // cap would read as a third number — hide it, but keep the at/over colour.
     const cnt = col.querySelector('h3 .count');
-    if (cnt) cnt.textContent = (boardAssignee || boardLabel) ? `${shown}/${cards.length}` : `${cards.length}`;
+    if (cnt) {
+      const filtering = !!(boardAssignee || boardLabel);
+      (cnt.querySelector('.n') || cnt).textContent = filtering ? `${shown}/${cards.length}` : `${cards.length}`;
+      const cap = cnt.querySelector('.cap');
+      if (cap) cap.hidden = filtering;
+    }
   });
 }
 $('#board-filter').addEventListener('click', (e) => {
