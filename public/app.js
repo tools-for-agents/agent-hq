@@ -446,8 +446,30 @@ async function renderMessages() {
         <span class="t">${ago(m.created_at)}</span>
       </div>
       <div class="mb">${esc(m.body)}</div>
+      ${receipts(m)}
     </div>`;
   }).join('') : '<div class="empty">No messages yet.</div>';
+}
+
+// Who has actually read it. "📢 everyone" said a message was BROADCAST; it never
+// said whether anyone had SEEN it — and a message nobody has read is not a message
+// that was delivered, it is a message that is still waiting.
+function receipts(m) {
+  if (!m.audience_count) return '';                       // nobody to read it (a broadcast with no other agents)
+  const seen = (m.read_by || []).map((id) => AGENTS[id]).filter(Boolean);
+  const waiting = (m.unread_by || []).map((id) => AGENTS[id]).filter(Boolean);
+  const all = m.read_count === m.audience_count;
+  const none = m.read_count === 0;
+
+  const faces = (list, cls) => list.map((a) =>
+    `<span class="rcp ${cls}" title="${esc(a.name)}">${a.avatar}</span>`).join('');
+
+  return `<div class="mr ${all ? 'all' : none ? 'none' : 'some'}">
+    <span class="mr-n">${all ? '✓✓ read by everyone'
+      : none ? `unread by ${m.audience_count === 1 ? 'them' : `all ${m.audience_count}`}`
+      : `✓ read by ${m.read_count} of ${m.audience_count}`}</span>
+    ${faces(seen, 'seen')}${faces(waiting, 'waiting')}
+  </div>`;
 }
 
 // Compose bar: pick a sender + recipient (or 📢 everyone) and post to /api/messages.

@@ -477,3 +477,12 @@ main { grid-area: main; overflow: auto; padding: 18px 22px; }
 .card.blocked:hover { opacity: 1; }
 .card .chip.blocked { color: #ff8f8a; border-color: rgba(255,107,107,.45); background: rgba(255,107,107,.12); }
 .card .chip.frees { color: var(--amber); border-color: rgba(251,191,36,.45); background: rgba(251,191,36,.12); }
+
+/* Read receipts: a message nobody has read is still waiting, not delivered */
+.msg .mr { display: flex; align-items: center; gap: 5px; margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--line); }
+.msg .mr-n { font-size: 10.5px; font-family: ui-monospace, monospace; margin-right: 4px; }
+.msg .mr.all .mr-n { color: var(--green); }
+.msg .mr.some .mr-n { color: var(--amber); }
+.msg .mr.none .mr-n { color: var(--muted); }
+.msg .rcp { font-size: 13px; line-height: 1; }
+.msg .rcp.waiting { filter: grayscale(1); opacity: .38; }

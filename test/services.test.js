@@ -418,3 +418,48 @@ test('the board says what is blocked — and what finishing would free', () => {
   Tasks.remove(doomed.id);
   assert.equal(cardsOf(Boards.full(bid))[c.id].blocked, false, 'a deleted blocker does not block forever');
 });
+
+test('messages: the feed says who has actually read it, not just who it was sent to', () => {
+  const a = Agents.register({ name: 'Reader-A' }).id;
+  const b = Agents.register({ name: 'Reader-B' }).id;
+  const sender = Agents.register({ name: 'Sender' }).id;
+
+  Messages.send({ from_agent: sender, to_agent: null, body: 'heads up, everyone' });   // broadcast
+  Messages.send({ from_agent: sender, to_agent: a, body: 'just for you' });            // direct
+
+  const find = (body) => Messages.recent(50).find((m) => m.body === body);
+
+  // a broadcast is addressed to every agent EXCEPT its author — nobody has to read
+  // their own message, and counting them would make "read by everyone" a lie
+  const bc = find('heads up, everyone');
+  assert.ok(!bc.audience.includes(sender), "the author is not an audience for their own message");
+  assert.ok(bc.audience.includes(a) && bc.audience.includes(b));
+  assert.equal(bc.read_count, 0, 'sent is not seen');
+  assert.equal(bc.unread_by.length, bc.audience_count);
+
+  // reading the inbox is what marks it read — per agent
+  Messages.inbox({ agent: a, mark_read: true });
+  const bc2 = find('heads up, everyone');
+  assert.deepEqual(bc2.read_by, [a], 'A has read it');
+  assert.ok(bc2.unread_by.includes(b), 'B has not');
+  assert.equal(bc2.read_count, 1);
+  assert.ok(bc2.read_count < bc2.audience_count, 'so it is not read by everyone yet');
+
+  // the direct message to A was in the same inbox pull, so it is read too
+  const dm = find('just for you');
+  assert.deepEqual(dm.audience, [a], 'a direct message has an audience of one');
+  assert.equal(dm.read_count, 1);
+  assert.equal(dm.audience_count, 1, 'and is read by everyone it was for');
+
+  // a broadcast is addressed to EVERY agent in the company (this DB has others from
+  // earlier tests), so it is only "read by everyone" once all of them have read it
+  Messages.inbox({ agent: b, mark_read: true });
+  const bc3 = find('heads up, everyone');
+  assert.equal(bc3.read_count, 2, 'two of them have read it');
+  assert.ok(bc3.unread_by.length > 0, 'and the rest of the company has not');
+
+  for (const id of bc3.unread_by) Messages.inbox({ agent: id, mark_read: true });
+  const bc4 = find('heads up, everyone');
+  assert.equal(bc4.read_count, bc4.audience_count, 'now it is read by everyone');
+  assert.equal(bc4.unread_by.length, 0);
+});

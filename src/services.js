@@ -518,7 +518,35 @@ export const Messages = {
                   AND r.agent_id IS NULL`, agent, agent, agent).n;
   },
 
-  recent: (limit = 50) => all(`SELECT * FROM messages ORDER BY created_at DESC LIMIT ?`, posInt(limit, 50, 500)),
+  // Who has actually read this? The read state has always been recorded per agent
+  // (message_reads, written when an agent pulls its inbox) and the feed never showed
+  // it — so "📢 everyone" told you a message was BROADCAST, never whether anyone had
+  // SEEN it. In a company of agents, "did the team get this?" is the question.
+  recent: (limit = 50) => {
+    const rows = all(`SELECT * FROM messages ORDER BY created_at DESC LIMIT ?`, posInt(limit, 50, 500));
+    if (!rows.length) return rows;
+
+    const reads = {};
+    for (const r of all(`SELECT message_id, agent_id FROM message_reads`)) {
+      (reads[r.message_id] ||= []).push(r.agent_id);
+    }
+    const everyone = all(`SELECT id FROM agents`).map((a) => a.id);
+
+    return rows.map((m) => {
+      // A broadcast is addressed to every agent except its author; a direct message
+      // to exactly one. The author is not an audience for their own message.
+      const audience = m.to_agent ? [m.to_agent] : everyone.filter((a) => a !== m.from_agent);
+      const readBy = (reads[m.id] || []).filter((a) => audience.includes(a));
+      return {
+        ...m,
+        audience,
+        read_by: readBy,
+        read_count: readBy.length,
+        audience_count: audience.length,
+        unread_by: audience.filter((a) => !readBy.includes(a)),
+      };
+    });
+  },
 };
 
 // ── Run / Cost ledger ────────────────────────────────────────────────────────
