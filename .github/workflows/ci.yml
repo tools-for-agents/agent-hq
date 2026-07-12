@@ -101,3 +101,35 @@ jobs:
           viewports: phone,tablet,desktop
           name: agent-hq-first-run
           tokens: kit
+
+  # ── THE STATES NOTHING EVER RENDERED ──────────────────────────────────────────
+  # `test` proves the logic. `look` renders the page WORKING. `first-run` renders it
+  # EMPTY. Not one of them has ever rendered a control that cannot be pressed, or a row
+  # switched off, or a card blocked — the states you have to DO something to reach.
+  #
+  # So nobody had ever looked at them, and every single one of them was broken: every
+  # disabled control in this kit was unreadable, two of them at 1:1 — the exact colour of
+  # their own background — under three green gates. A state that is never rendered is a
+  # state that is never checked, and it will rot, quietly, forever.
+  #
+  # This gate poses the page in those states and audits it there.
+  states:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Serve it
+        run: |
+          npm run seed || true
+          PORT=7700 npm start &
+          for i in $(seq 30); do curl -sf http://localhost:7700/ >/dev/null && break; sleep 1; done
+      - uses: tools-for-agents/iris@main
+        with:
+          url: http://localhost:7700/
+          viewports: desktop
+          tokens: kit
+          name: states
+          pre: >-
+            document.querySelectorAll('button,input,select,textarea').forEach(e=>e.disabled=true);document.querySelectorAll('.card').forEach(e=>e.classList.add('blocked'));document.querySelectorAll('#legend .row,.gl-item').forEach(e=>e.classList.add('off'))

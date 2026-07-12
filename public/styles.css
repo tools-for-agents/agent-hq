@@ -419,8 +419,11 @@ main { grid-area: main; overflow: auto; padding: 16px 24px; }
 
 .xtk .xtk-l{color:#a9b0bd;letter-spacing:.3px;padding: 8px 0;}
 .xtk a,.xtk .cur{display:inline-flex;align-items:center;min-height:24px;padding: 4px 8px;border-radius:8px;color:var(--x);text-decoration:none;}
-.xtk a{opacity:.85;transition:opacity .12s,text-shadow .12s;}
-.xtk a:hover{opacity:1;text-shadow:0 0 10px var(--x);}
+/* The cross-tool strip is on EVERY page of EVERY tool, and it was faded. `opacity:.82`
+   put these links at 4.19:1 — under AA — to signal "not the current tool", which the
+   bold `.cur` already says. Redundant signalling, paid for in legibility. Full strength. */
+  .xtk a{transition:opacity .12s,text-shadow .12s;}
+.xtk a:hover{text-shadow:0 0 10px var(--x);}
 .xtk .cur{font-weight:700;}
 
 /* ── Flow: is the company finishing what it starts? ─────────────────────── */
@@ -494,8 +497,18 @@ main { grid-area: main; overflow: auto; padding: 16px 24px; }
 .nt-force:hover { color: var(--txt); }
 
 /* Blocked work should not look like work you can start */
-.card.blocked { opacity: .62; border-left-color: var(--muted) !important; }
-.card.blocked:hover { opacity: 1; }
+/* A BLOCKED CARD IS THE ONE CARD YOU MOST NEED TO READ, AND THIS FADED IT.
+ *
+ * `opacity: .62` dimmed the card and EVERYTHING INSIDE IT — title, labels, the chip that
+ * says what it is waiting on — to 2.73:1. And `:hover { opacity: 1 }` meant the only way
+ * to read why a task was blocked was to go and hover it, one card at a time. The whole
+ * point of the board is to see the blockage at a glance.
+ *
+ * The fade was redundant anyway: a blocked card already carries a red `blocked` chip and
+ * a muted left border. Both survive here. Being blocked is now said in colour — a flatter,
+ * greyer, borderless-looking card — while every word on it stays fully legible.
+ */
+.card.blocked { background: var(--panel); border-left-color: var(--muted) !important; box-shadow: none; }
 .card .chip.blocked { color: #ff8f8a; border-color: rgba(255,107,107,.45); background: rgba(255,107,107,.12); }
 .card .chip.frees { color: var(--amber); border-color: rgba(251,191,36,.45); background: rgba(251,191,36,.12); }
 
