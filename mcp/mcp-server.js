@@ -438,8 +438,23 @@ async function handle(msg) {
   if (method === 'tools/call') {
     const tool = toolMap[params?.name];
     if (!tool) return fail(id, -32602, `unknown tool: ${params?.name}`);
+    // Every tool DECLARES its required arguments in inputSchema, and nothing enforced
+    // them. `lens_search` with no query did not say "query is required" — it called
+    // search(undefined) and died three layers down with
+    //     Cannot read properties of undefined (reading 'match')
+    // which is what a model got back, as if it were an answer. A schema that promises a
+    // check nobody performs is worse than no schema: the client trusts it.
+    const args = params?.arguments || {};
+    const missing = (tool.inputSchema?.required || [])
+      .filter((k) => args[k] === undefined || args[k] === null || args[k] === '');
+    if (missing.length) {
+      const how = missing
+        .map((k) => `"${k}"${tool.inputSchema.properties?.[k]?.description ? ` (${tool.inputSchema.properties[k].description})` : ''}`)
+        .join(', ');
+      return fail(id, -32602, `${tool.name}: missing required argument${missing.length > 1 ? 's' : ''} ${how}`);
+    }
     try {
-      const out = await tool.run(params.arguments || {});
+      const out = await tool.run(args);
       return reply(id, { content: [{ type: 'text', text: JSON.stringify(out, null, 2) }] });
     } catch (err) {
       return reply(id, { content: [{ type: 'text', text: `error: ${err.message}` }], isError: true });
