@@ -564,3 +564,47 @@ test('with HQ down, the MCP server says what is wrong and what to do about it', 
   assert.match(out, /127\.0\.0\.1:9/, 'and WHERE it looked, so a wrong HQ_URL is visible');
   assert.match(out, /docker compose up|npm start/, 'and what to do about it');
 });
+
+// ── Wrong data written confidently is worse than an error ────────────────────────
+// Every tool declares its argument TYPES and enums in inputSchema. Nothing enforced
+// them, and unlike a missing argument these do not crash — they corrupt, in silence.
+// `kanban_create_task labels:"urgent"` cheerfully created a task whose labels were the
+// letters u, r, g, e, n, t. Nothing announced it. That is the worst kind of bug: the
+// caller is told it worked.
+test('a wrong argument type is refused, not written', async () => {
+  const { spawn } = await import('node:child_process');
+  const call = (name, args) => new Promise((resolve) => {
+    const p = spawn('node', ['mcp/mcp-server.js'], {
+      stdio: ['pipe', 'pipe', 'ignore'],
+      env: { ...process.env, HQ_URL: process.env.HQ_URL || 'http://localhost:7700' },
+    });
+    let buf = '';
+    const done = (v) => { try { p.kill('SIGKILL'); } catch {} resolve(v); };
+    setTimeout(() => done({}), 10000);
+    p.stdout.on('data', (d) => {
+      buf += d;
+      const lines = buf.split('\n'); buf = lines.pop();
+      for (const l of lines) { let m; try { m = JSON.parse(l); } catch { continue; } if (m.id === 3) done(m); }
+    });
+    const send = (o) => p.stdin.write(JSON.stringify(o) + '\n');
+    send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 't', version: '1' } } });
+    send({ jsonrpc: '2.0', method: 'notifications/initialized' });
+    send({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name, arguments: args } });
+  });
+
+  const badArray = await call('kanban_create_task', { title: 'x', labels: 'urgent' });
+  assert.match(badArray.error?.message || '', /"labels" must be array, got string/,
+    'a string where an array was declared is refused — it used to become a task');
+
+  const badEnum = await call('kanban_create_task', { title: 'x', priority: 'CRITICAL' });
+  assert.match(badEnum.error?.message || '', /must be one of low \| medium \| high \| urgent/,
+    'and the enum says which values exist, so the caller can fix it without reading the docs');
+
+  // And the refusal must be a refusal: nothing was created.
+  const r = await fetch((process.env.HQ_URL || 'http://localhost:7700') + '/api/tasks').catch(() => null);
+  if (r?.ok) {
+    const tasks = await r.json();
+    assert.ok(!(Array.isArray(tasks) ? tasks : tasks.tasks || []).some((t) => t.title === 'x'),
+      'the rejected task does not exist');
+  }
+});

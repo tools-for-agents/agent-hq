@@ -453,6 +453,33 @@ async function handle(msg) {
         .join(', ');
       return fail(id, -32602, `${tool.name}: missing required argument${missing.length > 1 ? 's' : ''} ${how}`);
     }
+    // ...and the TYPES it declares, and the enums. Nothing enforced those either, and
+    // unlike a missing argument they do not crash — they corrupt, quietly:
+    //   kanban_create_task labels:"urgent"   → a task whose labels are the letters u,r,g…
+    //   cortex_write title:{...}             → a note on disk called "[object Object]"
+    //   lens_search k:"eight"                → silently ignored, and you never learn why
+    // Wrong data written confidently is worse than an error, because nothing announces it.
+    const props = tool.inputSchema?.properties || {};
+    const kindOf = (v) => (Array.isArray(v) ? 'array' : v === null ? 'null' : typeof v);
+    const OK = {
+      string: (v) => typeof v === 'string',
+      number: (v) => typeof v === 'number' && Number.isFinite(v),
+      integer: (v) => Number.isInteger(v),
+      boolean: (v) => typeof v === 'boolean',
+      array: (v) => Array.isArray(v),
+      object: (v) => v !== null && typeof v === 'object' && !Array.isArray(v),
+    };
+    const wrong = [];
+    for (const [k, spec] of Object.entries(props)) {
+      const v = args[k];
+      if (v === undefined || v === null) continue;
+      if (spec.type && OK[spec.type] && !OK[spec.type](v)) {
+        wrong.push(`"${k}" must be ${spec.type}, got ${kindOf(v)}`);
+      } else if (spec.enum && !spec.enum.includes(v)) {
+        wrong.push(`"${k}" must be one of ${spec.enum.join(' | ')} — got ${JSON.stringify(v)}`);
+      }
+    }
+    if (wrong.length) return fail(id, -32602, `${tool.name}: ${wrong.join('; ')}`);
     try {
       const out = await tool.run(args);
       return reply(id, { content: [{ type: 'text', text: JSON.stringify(out, null, 2) }] });
