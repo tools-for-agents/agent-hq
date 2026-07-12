@@ -171,3 +171,37 @@ jobs:
             const f=window.fetch;window.fetch=(u,o)=>String(u).includes('/api/')?Promise.resolve(new Response('{"error":"ci"}',{status:500,headers:{'content-type':'application/json'}})):f(u,o);
           pre: >-
             const b=document.getElementById('apidown');if(!b||b.hidden||!b.textContent.trim()) throw new Error('the server said no and the page said NOTHING');
+
+  # ── AND WHAT DOES IT DRAW WHILE THE SERVER IS STILL THINKING? ─────────────────
+  # This app had exactly ONE way of showing "nothing": nothing. So three completely
+  # different truths rendered as the same picture — you have no data, the server is
+  # broken, and the server has not answered yet.
+  #
+  # On a slow backend, lens put its welcome screen up — "Pick a file from the tree" —
+  # over a tree that had not loaded. The empty state is a CLAIM ("you have nothing"),
+  # and the app was making it before it had any evidence. It had not been told
+  # "nothing". It had not been told ANYTHING.
+  #
+  # --boot makes every API call take 20s. The page must say it is still asking.
+  slow-api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Serve it
+        run: |
+          npm run seed || true
+          PORT=7700 npm start &
+          for i in $(seq 30); do curl -sf http://localhost:7700/ >/dev/null && break; sleep 1; done
+      - uses: tools-for-agents/iris@main
+        with:
+          url: http://localhost:7700/
+          viewports: desktop
+          tokens: kit
+          name: slow-api
+          boot: >-
+            const f=window.fetch;window.fetch=(u,o)=>String(u).includes('/api/')?new Promise(r=>setTimeout(()=>r(f(u,o)),20000)):f(u,o);
+          pre: >-
+            const p=document.getElementById('busypill');if(!p||p.hidden) throw new Error('SILENT WAIT: the server is thinking and the page says nothing');if(document.body.getAttribute('aria-busy')!=='true') throw new Error('and nothing announced it to a screen reader either');

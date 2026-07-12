@@ -53,17 +53,71 @@ function apiDown(msg) {
 // Only OUR "the server said no" is swallowed. A real TypeError still reaches the console,
 // where iris's console gate can see it — silencing everything would trade a visible bug
 // for an invisible one.
+// ── AND SAY WHEN YOU ARE STILL ASKING ────────────────────────────────────────────
+//
+// These apps had exactly ONE way of showing "nothing": nothing. So three completely
+// different truths all rendered as the same picture —
+//
+//     you have no data      · the empty state
+//     the server is broken  · (fixed above)
+//     the server is THINKING · this
+//
+// A slow backend put lens's welcome screen on the screen — "Pick a file from the tree" —
+// over a tree that had not loaded yet. The empty state is a CLAIM ("you have nothing"),
+// and the app was making it before it had any evidence. It had not been told "nothing";
+// it had not been told ANYTHING.
+//
+// So: while a request is in flight, say so. aria-busy for anything listening, and a
+// visible pill for the human — after a beat, so a fast answer never flickers.
+let inflight = 0, busyTimer = null;
+
+function busy(on) {
+  inflight += on ? 1 : -1;
+  if (inflight < 0) inflight = 0;
+  document.body.setAttribute('aria-busy', inflight > 0 ? 'true' : 'false');
+  if (inflight > 0) {
+    if (busyTimer) return;
+    // 300ms: below this a human reads it as "instant", and a pill that flashes on every
+    // fast request is noise that teaches you to ignore the one time it matters.
+    busyTimer = setTimeout(() => { const p = busyPill(); p.hidden = false; }, 300);
+  } else {
+    clearTimeout(busyTimer); busyTimer = null;
+    const p = document.getElementById('busypill');
+    if (p) p.hidden = true;
+  }
+}
+
+function busyPill() {
+  let p = document.getElementById('busypill');
+  if (!p) {
+    p = document.createElement('div');
+    p.id = 'busypill';
+    p.setAttribute('role', 'status');       // announced, not shouted
+    p.textContent = 'still asking the server…';
+    // Its own background, like the error bar — so no stylesheet can fade it out and it
+    // is legible in either theme.
+    p.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:99998;padding:8px 14px;'
+      + 'border-radius:999px;background:#1e3a5f;color:#fff;'
+      + 'font:600 13px/1.5 ui-sans-serif,system-ui,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.4);';
+    document.body.appendChild(p);
+  }
+  return p;
+}
+
 addEventListener('unhandledrejection', (e) => {
   if (e.reason instanceof ApiError) { apiDown(e.reason.message); e.preventDefault(); }
 });
 
 const api = async (p, o) => {
+  busy(true);
+  try {
   const r = await fetch('/api' + p, o);
   // r.ok, the check that was never there. A 500 with a JSON body parses fine and
   // comes back looking exactly like data — which is how `.map is not a function`
   // ends up being what a user sees when their server falls over.
   if (!r.ok) throw new ApiError(`${p} — HTTP ${r.status} ${r.statusText || ''}`.trim());
-  return r.json();
+  return await r.json();
+  } finally { busy(false); }
 };
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const ago = (iso) => {
