@@ -1,6 +1,70 @@
 // Agent HQ dashboard — vanilla JS, live-updated over SSE.
 const $ = (s) => document.querySelector(s);
-const api = (p, o) => fetch('/api' + p, o).then((r) => r.json());
+// ── WHEN THE SERVER SAYS NO, SAY SO ──────────────────────────────────────────────
+//
+// Every one of these UIs is a shell that asks a server what to draw, and not one of
+// them had ever rendered the answer "no". The helper was the same in all seven:
+//
+//     const api = (p) => fetch(p).then((r) => r.json());
+//
+// It never looks at `r.ok`. A 500 with a JSON body parses perfectly and is handed back
+// AS DATA, so the render function calls `.map` on an error object, throws halfway
+// through, and leaves the page as a blank shell — no columns, no rows, no message.
+//
+// So when agent-hq's backend died, the board showed you AN EMPTY ROOM. Nothing on the
+// screen distinguished "the server is down" from "you have no tasks" — and the CI gate
+// that renders the empty first-run page proves that empty looks FINE, so it passed.
+//
+// An error state that renders as an empty state is worse than a crash: a crash tells you
+// something happened.
+class ApiError extends Error {}
+
+function apiDown(msg) {
+  let b = document.getElementById('apidown');
+  if (!b) {
+    b = document.createElement('div');
+    b.id = 'apidown';
+    b.setAttribute('role', 'alert');
+    // Inline, self-contained, and its own background — so it is legible in either theme
+    // and cannot be faded out by a stylesheet that has never seen it.
+    b.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:99999;display:flex;gap:12px;'
+      + 'align-items:center;justify-content:center;flex-wrap:wrap;padding:12px 16px;'
+      + 'background:#7f1d1d;color:#fff;font:600 14px/1.5 ui-sans-serif,system-ui,sans-serif;';
+    document.body.appendChild(b);
+  }
+  b.textContent = '';
+  const t = document.createElement('span');
+  t.textContent = 'The server said no — this page is showing you nothing because it was told nothing. ' + msg;
+  const r = document.createElement('button');
+  r.textContent = 'try again';
+  r.style.cssText = 'background:#fff;color:#7f1d1d;border:0;border-radius:6px;padding:6px 12px;'
+    + 'font:700 14px/1.5 ui-sans-serif,system-ui,sans-serif;cursor:pointer;min-height:24px;';
+  r.onclick = () => location.reload();
+  b.append(t, r);
+
+  // MAKE ROOM FOR IT — measured, after the text is in, so the height is the real one.
+  // A fixed bar at top:0 sits ON TOP of the app's own header, so the first cut of this
+  // reported the outage by hiding the title bar. That is not an improvement. box-sizing
+  // is forced to border-box so the padding eats into a 100vh body instead of overflowing it.
+  document.body.style.boxSizing = 'border-box';
+  document.body.style.paddingTop = b.getBoundingClientRect().height + 'px';
+}
+
+// Only OUR "the server said no" is swallowed. A real TypeError still reaches the console,
+// where iris's console gate can see it — silencing everything would trade a visible bug
+// for an invisible one.
+addEventListener('unhandledrejection', (e) => {
+  if (e.reason instanceof ApiError) { apiDown(e.reason.message); e.preventDefault(); }
+});
+
+const api = async (p, o) => {
+  const r = await fetch('/api' + p, o);
+  // r.ok, the check that was never there. A 500 with a JSON body parses fine and
+  // comes back looking exactly like data — which is how `.map is not a function`
+  // ends up being what a user sees when their server falls over.
+  if (!r.ok) throw new ApiError(`${p} — HTTP ${r.status} ${r.statusText || ''}`.trim());
+  return r.json();
+};
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const ago = (iso) => {
   const s = Math.floor((Date.now() - new Date(iso)) / 1000);

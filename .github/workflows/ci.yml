@@ -133,3 +133,41 @@ jobs:
           name: states
           pre: >-
             document.querySelectorAll('button,input,select,textarea').forEach(e=>e.disabled=true);document.querySelectorAll('.card').forEach(e=>e.classList.add('blocked'));document.querySelectorAll('#legend .row,.gl-item').forEach(e=>e.classList.add('off'))
+
+  # ── WHAT DOES IT DRAW WHEN THE SERVER SAYS NO? ────────────────────────────────
+  # This UI is a shell that asks a server what to render, and it had never once
+  # rendered the answer "no". The helper was `fetch(p).then(r => r.json())` — it never
+  # looked at `r.ok`, so a 500 with a JSON body came back looking exactly like DATA,
+  # `.map` threw halfway through the render, and the page was left a blank shell.
+  #
+  # The result: when the backend died you were shown AN EMPTY ROOM. Nothing on screen
+  # told "the server is down" apart from "you have no data" — and the `first-run` gate
+  # PROVES the empty page looks fine, so it went green over it every time.
+  #
+  # An error state that renders as an empty state is worse than a crash. A crash at
+  # least tells you something happened.
+  #
+  # --boot breaks the API before the app's first line runs; --pre then asserts the app
+  # ADMITTED it. A page that quietly renders nothing fails this job.
+  dead-api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Serve it
+        run: |
+          npm run seed || true
+          PORT=7700 npm start &
+          for i in $(seq 30); do curl -sf http://localhost:7700/ >/dev/null && break; sleep 1; done
+      - uses: tools-for-agents/iris@main
+        with:
+          url: http://localhost:7700/
+          viewports: desktop
+          tokens: kit
+          name: dead-api
+          boot: >-
+            const f=window.fetch;window.fetch=(u,o)=>String(u).includes('/api/')?Promise.resolve(new Response('{"error":"ci"}',{status:500,headers:{'content-type':'application/json'}})):f(u,o);
+          pre: >-
+            const b=document.getElementById('apidown');if(!b||b.hidden||!b.textContent.trim()) throw new Error('the server said no and the page said NOTHING');
