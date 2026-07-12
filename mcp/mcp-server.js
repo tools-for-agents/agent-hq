@@ -414,6 +414,48 @@ const tools = [
   },
 ];
 
+// ── What each tool does to the world ───────────────────────────────────────────
+// MCP tool annotations (spec 2025-11-25). The spec's defaults are PESSIMISTIC: with no
+// annotations at all, every tool here — including the pure reads — is declared
+// destructive and open-world, and a conformant client should warn before each call.
+// You do not become safe by omission. You become safe by saying so.
+//
+//   readOnlyHint    the tool changes nothing        → the client can skip the confirmation
+//   destructiveHint it may overwrite or delete      → the client should warn first
+//   idempotentHint  calling twice changes no more   → safe to retry on failure
+//   openWorldHint   it reaches, or returns content from, outside our trust boundary
+//                   (the web; the output of arbitrary code) → scrutinise what comes back
+const ANNOTATIONS = {
+  agent_list: {"readOnlyHint": true, "openWorldHint": false},
+  kanban_board: {"readOnlyHint": true, "openWorldHint": false},
+  kanban_get_task: {"readOnlyHint": true, "openWorldHint": false},
+  kanban_list_tasks: {"readOnlyHint": true, "openWorldHint": false},
+  kanban_flow: {"readOnlyHint": true, "openWorldHint": false},
+  memory_search: {"readOnlyHint": true, "openWorldHint": false},
+  activity_feed: {"readOnlyHint": true, "openWorldHint": false},
+  ledger_summary: {"readOnlyHint": true, "openWorldHint": false},
+  company_stats: {"readOnlyHint": true, "openWorldHint": false},
+  company_graph: {"readOnlyHint": true, "openWorldHint": false},
+  agent_register: {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
+  agent_set_status: {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
+  kanban_create_task: {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false},
+  kanban_move_task: {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
+  kanban_set_wip_limit: {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
+  kanban_update_task: {"readOnlyHint": false, "destructiveHint": true, "idempotentHint": true, "openWorldHint": false},
+  kanban_claim_task: {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
+  kanban_next_task: {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false},
+  kanban_release_task: {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
+  kanban_comment: {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false},
+  kanban_add_dependency: {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
+  kanban_remove_dependency: {"readOnlyHint": false, "destructiveHint": true, "idempotentHint": true, "openWorldHint": false},
+  message_send: {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false},
+  message_inbox: {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
+  memory_write: {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false},
+  run_start: {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false},
+  run_end: {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
+  run_record: {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false},
+};
+
 const toolMap = Object.fromEntries(tools.map((t) => [t.name, t]));
 
 // ── JSON-RPC plumbing (newline-delimited over stdio) ───────────────────────
@@ -433,7 +475,7 @@ async function handle(msg) {
   if (method === 'notifications/initialized' || method === 'notifications/cancelled') return;
   if (method === 'ping') return reply(id, {});
   if (method === 'tools/list') {
-    return reply(id, { tools: tools.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })) });
+    return reply(id, { tools: tools.map(({ name, description, inputSchema }) => ({ name, description, inputSchema, annotations: ANNOTATIONS[name] })) });
   }
   if (method === 'tools/call') {
     const tool = toolMap[params?.name];
