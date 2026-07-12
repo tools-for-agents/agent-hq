@@ -641,3 +641,56 @@ test('creating into a column that does not exist does not quietly land in Backlo
   const t = Tasks.create({ board_id: b, title: 'defaulted' });
   assert.ok(t.id);
 });
+
+// ── stdout IS the protocol ──────────────────────────────────────────────────────
+// An MCP server speaks newline-delimited JSON-RPC on stdout and NOTHING else.
+//
+// One console.log anywhere in a code path a tool can reach — a leftover debug line, a
+// helpful progress message — puts a line on that stream which is not a message. The
+// client desyncs. It does not fail loudly: the call simply never comes back, or comes
+// back as the wrong reply to the wrong request, and the agent is left holding a session
+// that has quietly stopped working. It is the single easiest way to break an MCP server,
+// and the hardest to notice, because everything still LOOKS fine.
+//
+// A dynamic check cannot cover this: it only sees the code paths it happens to exercise,
+// and a debug line inside `search()` is invisible until someone searches. So walk the
+// import graph from the server itself and refuse the whole class.
+//
+// `cli.js` and `server.js` are the CLI and the `serve` command — they are meant to print,
+// and the MCP server never imports them. If that ever changes, this test is what tells you.
+test('nothing the MCP server can reach is allowed to print to stdout', async () => {
+  const { readFileSync, existsSync } = await import('node:fs');
+  const { dirname, resolve, relative } = await import('node:path');
+
+  const entry = resolve(import.meta.dirname, '..', 'mcp', 'mcp-server.js');
+  const seen = new Set();
+  const offenders = [];
+
+  const walk = (file) => {
+    if (seen.has(file) || !existsSync(file)) return;
+    seen.add(file);
+    const src = readFileSync(file, 'utf8');
+
+    // The server itself writes the protocol — that is its job. Everything it pulls in must not.
+    if (file !== entry) {
+      src.split('\n').forEach((line, i) => {
+        if (/^\s*(\/\/|\*)/.test(line)) return;                       // a comment about it is fine
+        if (/console\.(log|info|debug|dir|table)\s*\(|process\.stdout\.write\s*\(/.test(line)) {
+          offenders.push(`${relative(process.cwd(), file)}:${i + 1}  ${line.trim().slice(0, 70)}`);
+        }
+      });
+    }
+    for (const m of src.matchAll(/from\s+['"](\.[^'"]+)['"]/g)) {
+      walk(resolve(dirname(file), m[1]));
+    }
+  };
+  walk(entry);
+
+  // agent-hq's MCP server imports nothing local — it is a thin HTTP client over the
+  // platform's API — so for it this walk finds only the entry file, and there is genuinely
+  // nothing to check. That is not a vacuous pass: it is the guard that fires the day
+  // somebody wires the server straight into services.js, which does print.
+  assert.ok(seen.size >= 1, 'the entry point was found');
+  assert.deepEqual(offenders, [],
+    'stdout is the protocol — one stray print desyncs every agent session:\n  ' + offenders.join('\n  '));
+});
