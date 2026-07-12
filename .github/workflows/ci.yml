@@ -101,7 +101,7 @@ jobs:
           viewports: phone,tablet,desktop
           name: agent-hq-first-run
           pre: >-
-            const shown=e=>{const s=getComputedStyle(e),r=e.getBoundingClientRect();return s.visibility!=='hidden'&&s.display!=='none'&&r.width>0&&r.height>0;};const shown=e=>{const s=getComputedStyle(e),r=e.getBoundingClientRect();return s.visibility!=='hidden'&&s.display!=='none'&&r.width>0&&r.height>0;};const vis=[...document.querySelectorAll('.empty,.empty2,.welcome,.list-empty,.detail-empty,.flow-empty,.act-empty')].filter(shown);if(!vis.length) throw new Error('THE SERVER SAID EMPTY AND THE PAGE SAID NOTHING — a fresh install shows the user a blank room');
+            const shown=e=>{const s=getComputedStyle(e),r=e.getBoundingClientRect();return s.visibility!=='hidden'&&s.display!=='none'&&r.width>0&&r.height>0;};const vis=[...document.querySelectorAll('.empty,.empty2,.welcome,.list-empty,.detail-empty,.flow-empty,.act-empty')].filter(shown);if(!vis.length) throw new Error('THE SERVER SAID EMPTY AND THE PAGE SAID NOTHING — a fresh install shows the user a blank room');
           tokens: kit
 
   # ── THE STATES NOTHING EVER RENDERED ──────────────────────────────────────────
