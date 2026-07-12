@@ -33,6 +33,42 @@ const run = async () => {
   await T('Todo', { title: 'Agent heartbeat & auto-offline detection', priority: 'medium', labels: ['platform'], created_by: agents.Atlas });
   await T('Backlog', { title: 'Cost & token accounting per agent', priority: 'low', labels: ['ops'], created_by: agents.Atlas });
 
+  // ── The rows a tidy seed never has, and real data always does ────────────────
+  //
+  // The UI gate renders whatever the seed puts on the board — so a seed of short, tidy,
+  // ASCII titles proves that the board survives short, tidy, ASCII titles. That is a
+  // check shaped to fit what already passes. Real boards are not like this: the longest
+  // title on OUR board is 123 characters, half of them contain a URL, and the team writes
+  // in more than one alphabet.
+  //
+  // These three are the ones that actually break layouts:
+  //   · an UNBROKEN string — a URL or a path with no spaces in it. `word-wrap` cannot
+  //     break it, so it pushes its container wider than the screen. It is the single most
+  //     common way a card, a table cell or a sidebar blows out, and no amount of
+  //     "lorem ipsum dolor sit" will ever produce one.
+  //   · a title long enough to wrap to three or four lines.
+  //   · text that is not ASCII — CJK has no spaces to wrap at, and emoji change the line
+  //     height under the text next to them.
+  //
+  // They belong in the seed, so that iris keeps proving it every build, rather than only
+  // on the day someone happens to try it by hand.
+  await T('Todo', {
+    title: 'Fix https://github.com/tools-for-agents/agent-hq/blob/main/src/services.js#L269-L277-kanban-list-tasks-filter',
+    description: 'An unbroken string with no spaces — the thing word-wrap cannot break.',
+    priority: 'high', assignee: agents.Forge,
+    labels: ['discoverability', 'needs-credential', 'design-system', 'token-efficiency', 'verification'],
+    created_by: agents.Atlas,
+  });
+  await T('Review', {
+    title: '漢字とemoji 🛰️🔎⚒🧠🧭◎👁 ve Türkçe karakterler: şğüıöç — the team does not write in ASCII',
+    priority: 'urgent', labels: ['i18n'], created_by: agents.Atlas,
+  });
+  await T('In Progress', {
+    title: 'A title long enough to wrap onto three or four lines in a narrow kanban column, '
+      + 'because that is what a real task written by a real agent in a hurry actually looks like',
+    priority: 'low', assignee: agents.Sage, labels: ['docs'], created_by: agents.Atlas,
+  });
+
   const M = (b) => post('/api/memory', b);
   // Overlapping tags on purpose: they become the hubs that bridge knowledge
   // authored by different agents across different namespaces in the Graph tab.
