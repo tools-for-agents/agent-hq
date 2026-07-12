@@ -190,7 +190,7 @@ main { grid-area: main; overflow: auto; padding: 16px 24px; }
 .compose-send { flex: none; background: var(--accent); color: #0b0e14; border: 1px solid var(--accent);
   border-radius: 8px; padding: 8px 16px; font-size: 12px; font-weight: 700; cursor: pointer; transition: filter .12s; }
 .compose-send:hover:not(:disabled) { filter: brightness(1.1); }
-.compose-send:disabled { opacity: .45; cursor: not-allowed; }
+.compose-send:disabled {  cursor: not-allowed; opacity:1 !important; color:var(--muted) !important; background:var(--panel-2) !important; border-color:var(--line) !important; cursor:not-allowed;}
 
 /* Ledger */
 .ledger-totals { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
@@ -488,7 +488,7 @@ main { grid-area: main; overflow: auto; padding: 16px 24px; }
 .nt-go { margin-left: auto; background: var(--accent); color: #08101f; border: none; border-radius: 8px;
   padding: 8px 16px; font-size: 12px; font-weight: 700; cursor: pointer; }
 .nt-go:hover { filter: brightness(1.12); }
-.nt-go:disabled { opacity: .6; cursor: default; }
+.nt-go:disabled {  cursor: default; opacity:1 !important; color:var(--muted) !important; background:var(--panel-2) !important; border-color:var(--line) !important; cursor:not-allowed;}
 .nt-over { margin-top: 8px; font-size: 12px; color: var(--muted); }
 .nt-force { background: none; border: none; padding: 0; font: inherit; color: var(--amber); cursor: pointer; text-decoration: underline; }
 .nt-force:hover { color: var(--txt); }
