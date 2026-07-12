@@ -71,7 +71,7 @@ async function renderBoard() {
               ${col.wip_limit != null ? `title="WIP limit ${col.wip_limit}"` : ''}><span class="n">${col.tasks.length}</span>${col.wip_limit != null ? `<span class="cap"> / ${col.wip_limit}</span>` : ''}</span>
       </h3>
       <div class="col-body">
-        ${col.tasks.map(card).join('') || '<div class="empty" style="padding:14px">—</div>'}
+        ${col.tasks.map(card).join('') || '<div class="empty" style="padding:16px">—</div>'}
       </div>
     </div>`).join('');
   renderBoardFilter();
