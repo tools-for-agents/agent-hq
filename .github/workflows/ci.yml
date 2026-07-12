@@ -100,6 +100,8 @@ jobs:
           url: http://localhost:7700/
           viewports: phone,tablet,desktop
           name: agent-hq-first-run
+          pre: >-
+            const shown=e=>{const s=getComputedStyle(e),r=e.getBoundingClientRect();return s.visibility!=='hidden'&&s.display!=='none'&&r.width>0&&r.height>0;};const shown=e=>{const s=getComputedStyle(e),r=e.getBoundingClientRect();return s.visibility!=='hidden'&&s.display!=='none'&&r.width>0&&r.height>0;};const vis=[...document.querySelectorAll('.empty,.empty2,.welcome,.list-empty,.detail-empty,.flow-empty,.act-empty')].filter(shown);if(!vis.length) throw new Error('THE SERVER SAID EMPTY AND THE PAGE SAID NOTHING — a fresh install shows the user a blank room');
           tokens: kit
 
   # ── THE STATES NOTHING EVER RENDERED ──────────────────────────────────────────
@@ -204,4 +206,4 @@ jobs:
           boot: >-
             const f=window.fetch;window.fetch=(u,o)=>String(u).includes('/api/')?new Promise(r=>setTimeout(()=>r(f(u,o)),20000)):f(u,o);
           pre: >-
-            const p=document.getElementById('busypill');if(!p||p.hidden) throw new Error('SILENT WAIT: the server is thinking and the page says nothing');if(document.body.getAttribute('aria-busy')!=='true') throw new Error('and nothing announced it to a screen reader either');
+            const p=document.getElementById('busypill');if(!p||p.hidden) throw new Error('SILENT WAIT: the server is thinking and the page says nothing');if(document.body.getAttribute('aria-busy')!=='true') throw new Error('and nothing announced it to a screen reader either');const shown=e=>{const s=getComputedStyle(e),r=e.getBoundingClientRect();return s.visibility!=='hidden'&&s.display!=='none'&&r.width>0&&r.height>0;};const vis=[...document.querySelectorAll('.empty,.empty2,.welcome,.list-empty,.detail-empty,.flow-empty,.act-empty')].filter(shown);if(vis.length) throw new Error('STILL ASKING, YET CLAIMING EMPTY: '+vis.map(e=>e.className).join(', '));

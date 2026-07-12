@@ -20,6 +20,7 @@ const $ = (s) => document.querySelector(s);
 class ApiError extends Error {}
 
 function apiDown(msg) {
+  ASKED('error');   // a failure is not an answer of "nothing"
   let b = document.getElementById('apidown');
   if (!b) {
     b = document.createElement('div');
@@ -70,11 +71,39 @@ function apiDown(msg) {
 // So: while a request is in flight, say so. aria-busy for anything listening, and a
 // visible pill for the human — after a beat, so a fast answer never flickers.
 let inflight = 0, busyTimer = null;
+// ── AN EMPTY STATE IS A CLAIM. DO NOT MAKE IT UNTIL YOU HAVE BEEN TOLD. ───────────
+//
+// The pill above says "still asking" — but the welcome screen was STILL SITTING THERE
+// underneath it, saying "Pick a file from the tree" over a tree that had not loaded.
+// So the app contradicted itself: asking, and answering, at the same time.
+//
+// "You have nothing" and "I have not been told yet" are different statements, and only
+// one of them is true before the server answers. So while the first answer is
+// outstanding — and after one that FAILED — the empty state is withheld. Not deleted:
+// hidden, with the layout kept, so nothing jumps when the truth arrives.
+//
+// data-asked is set only once a request is actually in flight, so a page that never
+// fetches at all is untouched and shows its empty state exactly as before. (Hiding it
+// unconditionally would have hidden it FOREVER on any page with no API.)
+let everAnswered = false;
+const ASKED = (v) => document.documentElement.setAttribute('data-asked', v);
+
+(function withholdTheClaim() {
+  const st = document.createElement('style');
+  const hide = ['.empty', '.empty2', '.welcome', '.list-empty', '.detail-empty', '.flow-empty', '.act-empty']
+    .flatMap((c) => [`[data-asked="no"] ${c}`, `[data-asked="error"] ${c}`]).join(',');
+  st.textContent = `${hide}{visibility:hidden !important;}`;
+  (document.head || document.documentElement).appendChild(st);
+})();
 
 function busy(on) {
   inflight += on ? 1 : -1;
   if (inflight < 0) inflight = 0;
   document.body.setAttribute('aria-busy', inflight > 0 ? 'true' : 'false');
+  // Before the first answer lands, the app has not been told "nothing" — it has not been
+  // told anything — so it must not say "nothing".
+  if (inflight > 0 && !everAnswered) ASKED('no');
+  if (inflight === 0 && !on) { everAnswered = true; ASKED('yes'); }
   if (inflight > 0) {
     if (busyTimer) return;
     // 300ms: below this a human reads it as "instant", and a pill that flashes on every
