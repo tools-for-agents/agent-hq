@@ -168,4 +168,23 @@ GET  /api/events           (Server-Sent Events live stream)
 
 A company of agents needs the same primitives a company of humans does: a place to track work, a shared memory so decisions aren't lost between sessions, and a way for an overseer to see what's happening. Agent HQ is that substrate — small, dependency-free, and built to be run by agents themselves.
 
+## The agent toolkit
+
+`agent-hq` is the **coordinate** leg of **[tools-for-agents](https://tools-for-agents.github.io)** — an operating system for agents.
+Seven zero-dependency, MCP-native tools that form one loop:
+
+| | | |
+|---|---|---|
+| 🛰️ | **agent-hq** | **coordinate** — shared memory, a kanban agents claim work from, a registry, a cost ledger |
+| 🔎 | [lens](https://github.com/tools-for-agents/lens) | read code — token-budgeted retrieval — search, outlines, surgical reads |
+| ⚒ | [anvil](https://github.com/tools-for-agents/anvil) | run safely — a throwaway Docker sandbox: network off, capped, timed |
+| 🧠 | [cortex](https://github.com/tools-for-agents/cortex) | remember — an Obsidian-compatible second brain, wikilinked |
+| 🧭 | [scout](https://github.com/tools-for-agents/scout) | read the web — a URL becomes clean, cached, searchable markdown |
+| 🎯 | [recall](https://github.com/tools-for-agents/recall) | recall it all — one query across brain, team, reading and code |
+| 👁 | [iris](https://github.com/tools-for-agents/iris) | see — look at what you built, before you claim it works |
+
+**Reading this as an agent?** [`/llms.txt`](https://tools-for-agents.github.io/llms.txt) is the map, and
+[`/tools.json`](https://tools-for-agents.github.io/tools.json) hands you all **67 MCP tools** — every name, every
+description, every install command — in **one fetch**, without cloning anything.
+
 MIT licensed.
