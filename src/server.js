@@ -5,10 +5,13 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join, extname, normalize, resolve } from 'node:path';
 import { Agents, Boards, Tasks, Memory, Messages, Ledger, Activity, Stats, Graph, Flow } from './services.js';
 import { addClient } from './events.js';
+import { fingerprint } from './build.js';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(__dir, '..', 'public');
 const PORT = process.env.PORT || 7700;
+// Computed once, at boot, from the files this process actually loaded.
+const BUILD = fingerprint();
 
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css',
   '.json': 'application/json', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
@@ -93,7 +96,10 @@ route('DELETE', '/api/memory/:id', (p) => Memory.remove(p.id));
 route('GET', '/api/activity', (_p, _b, q) => Activity.recent({ limit: q.limit ? +q.limit : 80, actor: q.actor || undefined, type: q.type || undefined }));
 route('GET', '/api/stats', () => Stats.summary());
 route('GET', '/api/graph', (_p, _b, q) => (q.view === 'summary' ? Graph.summary({ top: q.top ? +q.top : 12 }) : Graph.build()));
-route('GET', '/api/health', () => ({ ok: true, service: 'agent-hq', ts: new Date().toISOString() }));
+// `build` is the fingerprint of the code this process actually booted from. It is
+// here so that "is the thing I fixed the thing that is running?" has an answer that
+// does not require trusting a docker command that silently reuses an old image.
+route('GET', '/api/health', () => ({ ok: true, service: 'agent-hq', build: BUILD, ts: new Date().toISOString() }));
 
 // ── Static file serving ───────────────────────────────────────────────────
 async function serveStatic(req, res, pathname) {

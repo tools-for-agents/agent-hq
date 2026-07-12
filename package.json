@@ -10,7 +10,8 @@
     "start": "node src/server.js",
     "seed": "node scripts/seed.js",
     "mcp": "node mcp/mcp-server.js",
-    "test": "node --test"
+    "test": "node --test",
+    "deployed": "node scripts/deployed.js"
   },
   "license": "MIT",
   "mcpName": "io.github.tools-for-agents/agent-hq",

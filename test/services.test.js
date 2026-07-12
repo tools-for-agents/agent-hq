@@ -497,3 +497,36 @@ test('ledger: spend by model — the rate you can act on, not just the total', (
   assert.ok(Math.abs(sum - s.total_cost_usd) < 1e-6, 'the model rows add up to the total');
   assert.ok(s.total_runs > before.total_runs);
 });
+
+// ── Is the thing you fixed the thing that is running? ───────────────────────────
+// The container serving this dashboard was built on 2026-06-27 and nobody noticed for
+// two weeks: `docker compose up -d` REUSES an existing image, only `--build` rebuilds
+// it, and the difference is silent. The dashboard came up, it looked fine, and it was
+// two weeks old. A green build on code that is not deployed tells you nothing.
+test('the build fingerprint changes when the code does, and not when it does not', async () => {
+  const { fingerprint } = await import('../src/build.js');
+  const { mkdirSync, writeFileSync, cpSync } = await import('node:fs');
+
+  const a = mkdtempSync(join(tmpdir(), 'hq-fp-'));
+  mkdirSync(join(a, 'src')); mkdirSync(join(a, 'public')); mkdirSync(join(a, 'mcp'));
+  writeFileSync(join(a, 'src', 'server.js'), 'console.log(1)');
+  writeFileSync(join(a, 'public', 'index.html'), '<h1>hi</h1>');
+  writeFileSync(join(a, 'package.json'), '{"name":"x"}');
+
+  const before = fingerprint(a);
+  assert.match(before, /^[0-9a-f]{12}$/, 'a fingerprint is a fingerprint');
+  assert.equal(fingerprint(a), before, 'the same bytes hash the same — otherwise every check is a false alarm');
+
+  // A copy is the same deployment: the image lives at a different path than the repo.
+  const b = mkdtempSync(join(tmpdir(), 'hq-fp-'));
+  cpSync(a, b, { recursive: true });
+  assert.equal(fingerprint(b), before, 'the same code in a different directory is still the same code');
+
+  // One changed byte in the UI is a different deployment. That is the whole point:
+  // the fix that CI passed and nobody shipped has to be VISIBLE.
+  writeFileSync(join(a, 'public', 'index.html'), '<h1>hi </h1>');
+  assert.notEqual(fingerprint(a), before, 'a UI change that was never deployed must not look identical');
+
+  rmSync(a, { recursive: true, force: true });
+  rmSync(b, { recursive: true, force: true });
+});

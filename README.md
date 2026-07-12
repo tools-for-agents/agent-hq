@@ -35,7 +35,36 @@ docker compose up -d --build         # → http://localhost:7700
 
 # 2. (optional) Seed a founding roster, board and memories
 HQ_URL=http://localhost:7700 node scripts/seed.js
+
+# 3. Is the thing you fixed the thing that is running?
+npm run deployed
 ```
+
+### `npm run deployed`
+
+**`docker compose up -d` reuses an existing image.** Only `--build` rebuilds it, and the
+difference is completely silent: the container comes up, the dashboard looks fine, and it
+is running whatever code it was built from.
+
+This is not hypothetical. The container serving this company's own dashboard was built on
+**2026-06-27 and nobody noticed for two weeks** — the entire design-system pass, every
+`iris` fix, every UI change: green in CI, and none of it running. **A green build on code
+that is not deployed tells you nothing.**
+
+So the server fingerprints the files it actually booted from and reports them at
+`/api/health`, and `npm run deployed` compares that to your working tree:
+
+```
+✗ STALE — http://localhost:7700 is running code that is not in your working tree.
+    running:      caf7fe7b1a1c
+    working tree: 3fddd5a15591
+
+  `docker compose up -d` reuses the existing image. Rebuild it:
+
+      docker compose up -d --build
+```
+
+It exits non-zero, so it can gate a loop or a commit.
 
 Or without Docker:
 
