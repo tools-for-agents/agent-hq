@@ -266,7 +266,32 @@ export const Tasks = {
     return t;
   },
 
+  // A FILTER THAT IS WRONG LOOKS EXACTLY LIKE A FILTER THAT MATCHED NOTHING.
+  //
+  // `kanban_list_tasks { status: "In Progres" }` — one letter short — returned []. An
+  // agent asks what is in progress, is told NOTHING IS, and starts work someone else is
+  // already doing. On a coordination board that is the most expensive lie in the kit.
+  //
+  // Columns and agents are FINITE, KNOWN sets. A filter that names something not in the
+  // set is not a query with no results, it is a mistake — so say so, and say what the
+  // real values are, because the fix is then in the sentence.
   list({ board_id, assignee, status } = {}) {
+    if (status) {
+      const known = all(`SELECT DISTINCT c.name FROM columns c` + (board_id ? ` WHERE c.board_id=?` : ''),
+        ...(board_id ? [board_id] : [])).map((r) => r.name);
+      if (!known.some((n) => n.toLowerCase() === String(status).toLowerCase())) {
+        throw new Error(`no column named "${status}" — this is NOT "no tasks there". `
+          + `The columns are: ${known.join(', ')}`);
+      }
+    }
+    if (assignee) {
+      const who = get(`SELECT id FROM agents WHERE id=? OR name=?`, assignee, assignee);
+      if (!who) {
+        const names = all(`SELECT name FROM agents ORDER BY name LIMIT 12`).map((r) => r.name);
+        throw new Error(`no agent "${assignee}" is registered — this is NOT "they have no tasks". `
+          + `Registered: ${names.join(', ') || 'nobody yet — call agent_register'}`);
+      }
+    }
     let sql = `SELECT t.*, c.name AS column_name FROM tasks t JOIN columns c ON c.id=t.column_id WHERE 1=1`;
     const args = [];
     if (board_id) { sql += ` AND t.board_id=?`; args.push(board_id); }
@@ -279,7 +304,19 @@ export const Tasks = {
   create({ board_id, column, title, description = '', assignee = null, priority = 'medium', labels = [], created_by = null, force = false }) {
     const board = board_id ? get(`SELECT * FROM boards WHERE id=?`, board_id) : Boards.ensureDefault();
     const bid = board.id;
-    let col = column ? columnByName(bid, column) : null;
+    // Asking for a column that does not exist used to drop the task quietly into the FIRST
+    // one. You said "Done", you got "Backlog", and you were told it worked. Omitting the
+    // column is a choice (the default); MISSPELLING it is a mistake, and they must not
+    // look the same.
+    let col = null;
+    if (column) {
+      col = columnByName(bid, column);
+      if (!col) {
+        const known = all(`SELECT name FROM columns WHERE board_id=? ORDER BY position`, bid).map((r) => r.name);
+        throw new Error(`no column named "${column}" — the task was NOT created. `
+          + `The columns are: ${known.join(', ')}`);
+      }
+    }
     if (!col) col = get(`SELECT * FROM columns WHERE board_id=? ORDER BY position LIMIT 1`, bid);
     assertWip(col, force);
     const id = uid('tsk_');
@@ -457,6 +494,17 @@ export const Memory = {
   },
 
   search({ q = '', agent_id, namespace, tag, limit = 25 } = {}) {
+    // Same shape as the kanban filters: a namespace that does not exist returned [], and
+    // an agent reads that as "the company remembers nothing about this". Namespaces are a
+    // finite, knowable set — so a name that is not in it is a typo, not an answer.
+    if (namespace) {
+      const known = all(`SELECT DISTINCT namespace FROM memories WHERE namespace IS NOT NULL ORDER BY namespace`)
+        .map((r) => r.namespace);
+      if (!known.includes(namespace)) {
+        throw new Error(`no memories are in a namespace called "${namespace}" — this is NOT "nothing is remembered". `
+          + `The namespaces are: ${known.join(', ') || 'none yet'}`);
+      }
+    }
     let sql = `SELECT * FROM memories WHERE 1=1`;
     const args = [];
     if (q) { sql += ` AND (title LIKE ? OR content LIKE ?)`; args.push(`%${q}%`, `%${q}%`); }

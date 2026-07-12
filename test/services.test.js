@@ -608,3 +608,36 @@ test('a wrong argument type is refused, not written', async () => {
       'the rejected task does not exist');
   }
 });
+
+// ── A filter that is WRONG looks exactly like a filter that matched NOTHING ──────
+test('a misspelled column is a mistake, not an empty board', () => {
+  const b = newBoard();
+  Tasks.create({ board_id: b, column: 'Todo', title: 'real work' });
+
+  // `kanban_list_tasks { status: "In Progres" }` — one letter short — returned []. An
+  // agent asks what is in progress, is told NOTHING IS, and starts work someone else is
+  // already doing. On a coordination board that is the most expensive lie in the kit.
+  assert.throws(() => Tasks.list({ board_id: b, status: 'In Progres' }), /no column named "In Progres"/,
+    'the typo is named');
+  assert.throws(() => Tasks.list({ board_id: b, status: 'In Progres' }), /NOT "no tasks there"/,
+    'and it says explicitly that this is not an empty result');
+  assert.throws(() => Tasks.list({ board_id: b, status: 'In Progres' }), /Backlog, Todo, In Progress/,
+    'and lists the columns that DO exist, so the fix is in the sentence');
+
+  // And the real thing still works, including a legitimately empty column.
+  assert.equal(Tasks.list({ board_id: b, status: 'Todo' }).length, 1);
+  assert.deepEqual(Tasks.list({ board_id: b, status: 'Review' }), [], 'an empty REAL column is still an empty list');
+});
+
+test('creating into a column that does not exist does not quietly land in Backlog', () => {
+  const b = newBoard();
+  // It used to fall back to the FIRST column. You said "Done", you got "Backlog", and you
+  // were told it worked. Omitting the column is a choice; misspelling it is a mistake.
+  assert.throws(() => Tasks.create({ board_id: b, column: 'Doen', title: 'x' }),
+    /no column named "Doen" — the task was NOT created/);
+  assert.equal(Tasks.list({ board_id: b }).length, 0, 'and nothing was created');
+
+  // Omitting it is still the default, and still works.
+  const t = Tasks.create({ board_id: b, title: 'defaulted' });
+  assert.ok(t.id);
+});
