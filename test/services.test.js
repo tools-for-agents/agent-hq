@@ -530,3 +530,37 @@ test('the build fingerprint changes when the code does, and not when it does not
   rmSync(a, { recursive: true, force: true });
   rmSync(b, { recursive: true, force: true });
 });
+
+// ── An error an agent cannot act on is an error you have not finished writing ────
+test('with HQ down, the MCP server says what is wrong and what to do about it', async () => {
+  const { spawn } = await import('node:child_process');
+  const out = await new Promise((resolve) => {
+    // Point it at a closed port: this is exactly what an agent hits when it installs
+    // the kit and calls a tool before starting the platform.
+    const p = spawn('node', ['mcp/mcp-server.js'], {
+      stdio: ['pipe', 'pipe', 'ignore'],
+      env: { ...process.env, HQ_URL: 'http://127.0.0.1:9' },
+    });
+    let buf = '';
+    const done = (v) => { try { p.kill('SIGKILL'); } catch {} resolve(v); };
+    setTimeout(() => done(''), 12000);
+    p.stdout.on('data', (d) => {
+      buf += d;
+      const lines = buf.split('\n'); buf = lines.pop();
+      for (const l of lines) {
+        let m; try { m = JSON.parse(l); } catch { continue; }
+        if (m.id === 3) done((m.result?.content || []).map((c) => c.text).join(' '));
+      }
+    });
+    const send = (o) => p.stdin.write(JSON.stringify(o) + '\n');
+    send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 't', version: '1' } } });
+    send({ jsonrpc: '2.0', method: 'notifications/initialized' });
+    send({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'company_stats', arguments: {} } });
+  });
+
+  // It used to say, in full: "error: fetch failed". Three words that name no cause and
+  // suggest no action, so the model's next move is to guess.
+  assert.match(out, /not running/, 'it says what is wrong');
+  assert.match(out, /127\.0\.0\.1:9/, 'and WHERE it looked, so a wrong HQ_URL is visible');
+  assert.match(out, /docker compose up|npm start/, 'and what to do about it');
+});

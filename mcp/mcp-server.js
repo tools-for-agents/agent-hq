@@ -7,13 +7,31 @@ import { createInterface } from 'node:readline';
 const HQ_URL = process.env.HQ_URL || 'http://localhost:7700';
 const PROTOCOL = '2024-11-05';
 
+// Unlike its siblings, this server is a CLIENT: the tools are a thin skin over the HQ
+// HTTP API, so every one of them needs HQ to actually be up.
+//
+// When it was not, every tool answered `error: fetch failed`. That is the truth and it
+// is useless — a model calling company_stats gets three words that name no cause and
+// suggest no action, and its next move is to guess. An error an agent cannot act on is
+// an error you have not finished writing.
 async function hq(method, path, body) {
-  const r = await fetch(HQ_URL + path, {
-    method,
-    headers: { 'Content-Type': 'application/json' },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let r;
+  try {
+    r = await fetch(HQ_URL + path, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (e) {
+    throw new Error(
+      `agent-hq is not running at ${HQ_URL} (${e.cause?.code || e.message}). `
+      + `Every agent-hq tool talks to it over HTTP, so none of them will work until it is up. `
+      + `Start it:  cd agent-hq && docker compose up -d --build   `
+      + `(or without Docker:  npm start). `
+      + `Point elsewhere with HQ_URL.`);
+  }
   const text = await r.text();
+  if (!r.ok) throw new Error(`agent-hq answered ${r.status} for ${method} ${path}: ${text.slice(0, 200)}`);
   try { return JSON.parse(text); } catch { return { raw: text }; }
 }
 
