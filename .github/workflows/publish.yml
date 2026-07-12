@@ -1,0 +1,48 @@
+# Publish to npm, then to the official MCP registry.
+#
+# The registry hosts METADATA ONLY — the package has to exist on npm first, and
+# package.json's "mcpName" is the marker that proves we own the name in server.json.
+#
+# Auth: the registry uses GitHub OIDC, so there is no registry secret to store.
+# npm does need one: add NPM_TOKEN to the repo (or org) secrets.
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+name: publish
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  id-token: write    # required for OIDC — this is what logs us into the registry
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: the name in package.json must match the one we claim in server.json
+        run: |
+          a=$(node -p "require('./package.json').mcpName")
+          b=$(node -p "require('./server.json').name")
+          test "$a" = "$b" || { echo "mcpName '$a' != server.json name '$b'"; exit 1; }
+
+      - run: npm test
+
+      - run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: install mcp-publisher
+        run: |
+          curl -sL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+
+      - run: ./mcp-publisher login github-oidc
+      - run: ./mcp-publisher publish

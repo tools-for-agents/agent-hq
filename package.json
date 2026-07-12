@@ -1,14 +1,47 @@
 {
-  "name": "agent-hq",
+  "name": "@tools-for-agents/agent-hq",
   "version": "0.1.0",
-  "description": "Operating platform for an all-agent company: shared memory, kanban-for-agents, agent registry and a live dashboard. Zero runtime dependencies.",
+  "description": "Shared memory, kanban, agent registry, messaging and a cost ledger for a team of agents.",
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "start": "node src/server.js",
     "seed": "node scripts/seed.js",
     "mcp": "node mcp/mcp-server.js",
     "test": "node --test"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "mcpName": "io.github.tools-for-agents/agent-hq",
+  "bin": {
+    "agent-hq": "mcp/mcp-server.js"
+  },
+  "files": [
+    "src",
+    "mcp",
+    "public",
+    "tokens.json",
+    "action.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tools-for-agents/agent-hq.git"
+  },
+  "homepage": "https://tools-for-agents.github.io",
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "ai-agents",
+    "agent-tools",
+    "claude",
+    "llm",
+    "zero-dependency",
+    "agent-hq"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }
