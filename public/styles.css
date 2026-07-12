@@ -414,9 +414,9 @@ main { grid-area: main; overflow: auto; padding: 16px 24px; }
 
 
 /* cross-tool footer — this is one of tools-for-agents' six web views */
-.xtk{position:fixed;left:50%;bottom:0;transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap: 12px;max-width:96vw;overflow-x:auto;padding: 4px 16px;border:1px solid rgba(255,255,255,.1);border-bottom:none;border-radius: 12px 12px 0 0;background:rgba(12,13,17,.82);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size: 12px;line-height:1;white-space:nowrap;opacity:.8;transition:opacity .2s;scrollbar-width:none;}
+.xtk{position:fixed;left:50%;bottom:0;transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap: 12px;max-width:96vw;overflow-x:auto;padding: 4px 16px;border:1px solid rgba(255,255,255,.1);border-bottom:none;border-radius: 12px 12px 0 0;background:rgba(12,13,17,.82);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size: 12px;line-height:1;white-space:nowrap;scrollbar-width:none;}
 .xtk::-webkit-scrollbar{display:none;}
-.xtk:hover{opacity:1;}
+
 .xtk .xtk-l{color:#a9b0bd;letter-spacing:.3px;padding: 8px 0;}
 .xtk a,.xtk .cur{display:inline-flex;align-items:center;min-height:24px;padding: 4px 8px;border-radius:8px;color:var(--x);text-decoration:none;}
 .xtk a{opacity:.85;transition:opacity .12s,text-shadow .12s;}
