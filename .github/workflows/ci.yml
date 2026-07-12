@@ -11,7 +11,28 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - run: node --test
+      # IN CI, A SKIPPED TEST IS A FAILED TEST.
+      #
+      # CI is the one place where every dependency is supposed to be present — Docker,
+      # Chrome, a network. So a skip here does not mean "not applicable", it means a
+      # guard fired that should not have, and a guard that fires wrongly is invisible:
+      # nobody reads "skipped".
+      #
+      # anvil's sandbox tests skipped on EVERY Linux CI run for the life of the project
+      # — `pass 11 · fail 0 · skipped 9`, green — because the skip guard probed by
+      # running anvil, and anvil was broken. The breakage switched off the tests that
+      # would have caught it. This is the net under that.
+      - name: run the tests — and none of them may be skipped
+        run: |
+          node --test 2>&1 | tee "$RUNNER_TEMP/test.txt"
+          code=${PIPESTATUS[0]}
+          test "$code" -eq 0 || exit $code
+          n=$(grep -oE '^# skipped [0-9]+|^. skipped [0-9]+' "$RUNNER_TEMP/test.txt" | grep -oE '[0-9]+$' | head -1)
+          echo "skipped: ${n:-0}"
+          if [ "${n:-0}" -ne 0 ]; then
+            echo "::error::${n} test(s) skipped in CI. Everything they need is installed here — a skip means a guard misfired, and a green build is hiding it."
+            exit 1
+          fi
 
   # Looking is part of the build now. This tool shipped a phone layout that dragged
   # the page 250px sideways, and controls at 2.4:1, past a green `node --test` — a
