@@ -73,3 +73,31 @@ jobs:
           name: agent-hq
           tokens: kit      # the kit's ONE design system — iris/tokens.json, not a copy
           strict: true     # drift is a regression now; a gate is what keeps it from creeping back
+
+  # THE EMPTY STATE IS THE ONE STATE EVERY USER SEES FIRST.
+  #
+  # The `look` job seeds data on purpose — a UI gate that has never seen a row of data is a
+  # screenshot of an empty room. But that means the EMPTY page stopped being rendered by
+  # anything at all, and real bugs were living in it: `scout serve` crashed at startup on a
+  # machine with no cache, and lens told a brand-new user their index was "stale" when they
+  # had never made one. Both states are audited now, because they are different states.
+  first-run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: browser-actions/setup-chrome@v1
+        id: chrome
+      - name: serve it with NOTHING in it, exactly as a new user would
+        run: |
+          PORT=7700 HQ_DB_PATH=/tmp/empty/hq.db node src/server.js &
+          for i in $(seq 30); do curl -sf http://localhost:7700/api/health >/dev/null && break; sleep 1; done
+          curl -sf http://localhost:7700/api/health >/dev/null || { echo "::error::the server did not start on an empty store — that is what a new user gets"; exit 1; }
+      - uses: tools-for-agents/iris@main
+        with:
+          url: http://localhost:7700/
+          viewports: phone,tablet,desktop
+          name: agent-hq-first-run
+          tokens: kit
