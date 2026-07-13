@@ -41,6 +41,24 @@ const CANARIES = [
     find: '      if (!known.some((n) => n.toLowerCase() === String(status).toLowerCase())) {',
     into: '      if (false) {',
   },
+  {
+    why: 'READING an inbox must not CONSUME it — mark_read defaults to false on purpose',
+    file: 'src/services.js',
+    find: '  inbox({ agent, unread_only = false, limit = 50, mark_read = false }) {',
+    into: '  inbox({ agent, unread_only = false, limit = 50, mark_read = true }) {',
+  },
+  {
+    why: '...and the same, by the other route: `&&` here becomes "mark everything read, always"',
+    file: 'src/services.js',
+    find: '    if (mark_read && rows.length) {',
+    into: '    if (mark_read || rows.length) {',
+  },
+  {
+    why: 'memory_search must FILTER — without the q clause it hands back the whole team memory and calls it a search',
+    file: 'src/services.js',
+    find: '    if (q) { sql += ` AND (title LIKE ? OR content LIKE ?)`; args.push(`%${q}%`, `%${q}%`); }',
+    into: '    if (false) { sql += ` AND (title LIKE ? OR content LIKE ?)`; args.push(`%${q}%`, `%${q}%`); }',
+  },
 ];
 
 const run = () => spawnSync('npm', ['test'], { encoding: 'utf8', timeout: 300_000 }).status;

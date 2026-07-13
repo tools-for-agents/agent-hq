@@ -75,9 +75,20 @@ test('claiming a task is atomic — a second claimant is refused', () => {
   assert.equal(second.ok, false);
 });
 
-test('memory: write then search finds it', () => {
+test('memory: write then search finds it — AND EXCLUDES WHAT DOES NOT MATCH', () => {
   Memory.write({ title: 'Token rotation', content: 'JWTs rotate every 15 minutes', importance: 5, tags: ['auth'] });
-  assert.ok(Memory.search({ q: 'rotate' }).some((m) => m.title === 'Token rotation'));
+  Memory.write({ title: 'Lunch order', content: 'nobody wants the anchovies', importance: 1 });
+
+  const hits = Memory.search({ q: 'rotate' });
+  assert.ok(hits.some((m) => m.title === 'Token rotation'), 'the memory that matches comes back');
+
+  // THE NEEDLE BEING IN THE HAYSTACK IS NOT EVIDENCE THAT THE HAYSTACK WAS FILTERED.
+  // This assertion used to be a bare `.some()`, and it could not fail: delete the `q` clause
+  // outright and memory_search returns EVERY memory in the database — the needle is still
+  // among them, and the test stays green. An agent would get the entire team's memory back
+  // for any query, pay for all of it, and believe it had searched.
+  assert.ok(!hits.some((m) => m.title === 'Lunch order'),
+    'a memory that matches nothing in the query must NOT come back — this is a search, not a list');
 });
 
 test('memory: agent_id filter surfaces an agent\'s authored memories (the agent-detail modal)', () => {
@@ -728,4 +739,39 @@ test('reapStale offlines the quiet agent and leaves the live one alone', async (
   // and a heartbeat brings it back: offline is a statement about silence, not a death sentence
   Agents.heartbeat(quiet.id);
   assert.notEqual(Agents.get(quiet.id).status, 'offline', 'a heartbeat revives it');
+});
+
+// READING YOUR INBOX MUST NOT CONSUME IT.
+//
+// message_inbox LOOKS LIKE A GETTER, and it is the one tool in the kit that is a getter with a
+// mutation inside it — which is exactly why it is annotated destructive (cycle 11). `mark_read`
+// defaults to false ON PURPOSE: an agent that peeks at its inbox must not silently mark every
+// message read, because then nothing is ever unread again and the next agent to look sees an
+// empty inbox that is not empty.
+//
+// Nothing was guarding it. TWO canaries survived here: flip the default to `true`, or turn
+// `if (mark_read && rows.length)` into `||` — and either way, merely LOOKING consumes the
+// messages, with the whole suite green.
+test('reading the inbox does not consume it — unless you say so', () => {
+  const a = Agents.register({ name: 'Reader-inbox', role: 'worker', avatar: '📬' });
+  const b = Agents.register({ name: 'Sender-inbox', role: 'worker', avatar: '📮' });
+  const sent = Messages.send({ from_agent: b.id, to_agent: a.id, body: 'the build is red' });
+  // NB: an inbox also carries BROADCASTS (to_agent IS NULL), and other tests send them — so
+  // find OUR message rather than counting. (My first cut asserted length===1 and failed on a
+  // broadcast from another test: the tool was right and the test was wrong.)
+  const mine = (opts = {}) => Messages.inbox({ agent: a.id, ...opts }).find((m) => m.id === sent.id);
+
+  assert.ok(mine(), 'the message is there');
+  assert.equal(mine().is_read, false, 'and it is unread');
+
+  // LOOK AGAIN. It must still be unread — the first look did not consume it.
+  assert.equal(mine().is_read, false,
+    'READING IS NOT CONSUMING: a plain inbox() call must never mark a message read');
+  assert.ok(mine({ unread_only: true }), 'and it is still returned by an unread_only query');
+
+  // …and when you DO ask, it is marked read, and stays read.
+  assert.ok(mine({ mark_read: true }), 'asking for it with mark_read still returns it');
+  assert.equal(mine({ unread_only: true }), undefined,
+    'mark_read: true is the only thing that consumes the message');
+  assert.equal(mine().is_read, true, 'and it stays read');
 });
