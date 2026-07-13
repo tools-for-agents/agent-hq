@@ -838,3 +838,44 @@ test('flow reports the cycle time it actually measured — median, average and s
   assert.equal(f.cycle.avg_hours, 8.3, `the average of [1,2,10,20] is 8.3, got ${f.cycle.avg_hours}`);
   assert.equal(mine[0].hours, 20, `the SLOWEST is the 20h task, got ${mine[0]?.hours}`);
 });
+
+// THE LEDGER IS HOW AN ALL-AGENT COMPANY KNOWS WHAT IT IS SPENDING, and not one number in it was
+// checked. The existing test records two runs and then asserts only that `spend_series` is an
+// array with at least two entries in it — never what any of the numbers say.
+//
+// So `total_tokens: input + output` could become `input - output` and the suite stayed green. An
+// agent calls ledger_summary, asks what the work has cost, and is handed a difference dressed up
+// as a total — often a NEGATIVE one. A wrong number dressed as a measurement, and this one is
+// about money.
+//
+// Measured as a DELTA, because Ledger.summary() sums the whole table and the other tests in this
+// file record runs of their own. (Four times today a test of mine measured the wrong population.
+// The tool was right every time.)
+test('the ledger adds up: tokens, cost, and the per-model breakdown', () => {
+  const before = Ledger.summary();
+  const agent = Agents.register({ name: 'Accountant', role: 'ledger', avatar: '🧾' });
+  const MODEL = 'model-for-the-ledger-test';
+
+  Ledger.record({ agent_id: agent.id, label: 'plan',  model: MODEL, input_tokens: 100, output_tokens: 50, cost_usd: 0.01 });
+  Ledger.record({ agent_id: agent.id, label: 'build', model: MODEL, input_tokens: 200, output_tokens: 80, cost_usd: 0.02 });
+
+  const after = Ledger.summary();
+  assert.equal(after.total_input_tokens - before.total_input_tokens, 300, 'input tokens are summed');
+  assert.equal(after.total_output_tokens - before.total_output_tokens, 130, 'output tokens are summed');
+  assert.equal(after.total_tokens - before.total_tokens, 430,
+    'AND THE TOTAL IS THE SUM OF THE TWO — 300 + 130 = 430, not the difference between them');
+  assert.equal(Math.round((after.total_cost_usd - before.total_cost_usd) * 1e6) / 1e6, 0.03, 'and the money adds up');
+
+  // …and the per-model row, which is what tells you the rate that actually matters.
+  const model = after.by_model.find((m) => m.model === MODEL);
+  assert.ok(model, 'the model appears in the breakdown');
+  assert.equal(model.runs, 2);
+  assert.equal(model.input_tokens, 300);
+  assert.equal(model.output_tokens, 130);
+
+  // …and the per-agent row, so you can see who spent it.
+  const mine = after.by_agent.find((a) => a.agent_id === agent.id);
+  assert.ok(mine, 'the agent appears in the breakdown');
+  assert.equal(mine.runs, 2);
+  assert.equal(Math.round(mine.cost_usd * 1e6) / 1e6, 0.03, 'and is billed for exactly what it spent');
+});

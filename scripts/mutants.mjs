@@ -77,6 +77,12 @@ const CANARIES = [
     find: "       WHERE id=? AND (assignee IS NULL OR assignee='' OR assignee=? OR lease_until IS NULL OR lease_until < ?)`,",
     into: "       WHERE id=? AND (assignee IS NULL OR assignee='' OR assignee=?)`,",
   },
+  {
+    why: 'the ledger is how a company knows what it spent — a total that SUBTRACTS is a negative number dressed as a bill',
+    file: 'src/services.js',
+    find: '      total_tokens: totals.input_tokens + totals.output_tokens,',
+    into: '      total_tokens: totals.input_tokens - totals.output_tokens,',
+  },
 ];
 
 const run = () => spawnSync('npm', ['test'], { encoding: 'utf8', timeout: 300_000 }).status;
