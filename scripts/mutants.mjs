@@ -83,6 +83,18 @@ const CANARIES = [
     find: '      total_tokens: totals.input_tokens + totals.output_tokens,',
     into: '      total_tokens: totals.input_tokens - totals.output_tokens,',
   },
+  {
+    why: 'a run with tokens but no cost must be PRICED, not zeroed — every auto-priced run else charges $0',
+    file: 'src/services.js',
+    find: '    const cost = cost_usd != null ? cost_usd : costOf(model, input_tokens, output_tokens);',
+    into: '    const cost = cost_usd != null ? cost_usd : 0;',
+  },
+  {
+    why: 'cost = input×inRate PLUS output×outRate — a minus there silently under-bills every run',
+    file: 'src/pricing.js',
+    find: '  const cost = (inputTokens / 1e6) * pi + (outputTokens / 1e6) * po;',
+    into: '  const cost = (inputTokens / 1e6) * pi - (outputTokens / 1e6) * po;',
+  },
 ];
 
 // spawnSync returns status:null when IT kills the child for exceeding the timeout — a TIMEOUT,

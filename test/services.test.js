@@ -879,3 +879,36 @@ test('the ledger adds up: tokens, cost, and the per-model breakdown', () => {
   assert.equal(mine.runs, 2);
   assert.equal(Math.round(mine.cost_usd * 1e6) / 1e6, 0.03, 'and is billed for exactly what it spent');
 });
+
+// THE LEDGER'S NUMBERS ONLY MEAN SOMETHING IF THE PRICING BEHIND THEM IS RIGHT.
+//
+// An agent logs a run with token counts and NO cost, and agent-hq prices it — costOf(model, in,
+// out). Every test until now passed an explicit cost_usd, so the auto-pricing path (the one an
+// agent actually takes) was never exercised. If costOf were wrong — wrong arithmetic, wrong
+// model match, wrong fallback — every auto-priced run mischarges, and the ledger, the thing a
+// company uses to know what it spent, is quietly wrong in a way nothing announces.
+test('costOf prices tokens by the model rate, matches by substring, and falls back to default', async () => {
+  const { costOf } = await import('../src/pricing.js');
+  // arithmetic: USD per 1M tokens, input rate + output rate
+  assert.equal(costOf('claude-opus-4-8', 1e6, 1e6), 90, 'opus 1M+1M = 15 + 75');
+  assert.equal(costOf('claude-haiku-4-5', 1e6, 0), 1, 'haiku 1M input = 1');
+  assert.equal(costOf('claude-sonnet-5', 0, 2e6), 30, 'sonnet 2M output = 2 × 15');
+  // substring match: the full model id contains the family key
+  assert.equal(costOf('claude-opus-4-8', 1000, 0), costOf('opus', 1000, 0), 'full id matches the family');
+  // a model on no list falls back to the default rate, not to zero (free tokens hide real spend)
+  assert.equal(costOf('some-unlisted-model', 1e6, 1e6), 18, 'unknown model → default 3 + 15');
+  assert.notEqual(costOf('some-unlisted-model', 1e6, 1e6), 0, 'and NEVER free — that would hide real cost');
+  assert.equal(costOf('opus', 0, 0), 0, 'zero tokens cost zero');
+});
+
+// …and the same, through the door an agent uses: record a run with tokens and no cost, and the
+// ledger must show the computed price — not zero, not undefined.
+test('run.record auto-prices a run when the agent gives tokens but no cost', () => {
+  const before = Ledger.summary().total_cost_usd;
+  const r = Ledger.record({ label: 'auto', model: 'claude-opus-4-8', input_tokens: 1e6, output_tokens: 1e6 });
+  assert.equal(r.cost_usd, 90, 'the run was priced from its tokens (opus 1M+1M = 90)');
+  assert.equal(Math.round((Ledger.summary().total_cost_usd - before) * 1e6) / 1e6, 90, 'and it landed in the ledger total');
+  // and an explicit cost still wins over the auto-price
+  const r2 = Ledger.record({ label: 'explicit', model: 'claude-opus-4-8', input_tokens: 1e6, output_tokens: 1e6, cost_usd: 0.5 });
+  assert.equal(r2.cost_usd, 0.5, 'an explicit cost_usd is honoured over the computed one');
+});
