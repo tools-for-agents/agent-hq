@@ -933,3 +933,46 @@ test('a HQ_PRICE_ env override sets the rate for that model, and a malformed one
     assert.equal(costOf('claude-sonnet-5', 1e6, 0), 3, 'a model the user did not override keeps the default');
   } finally { for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k]; Object.assign(process.env, saved); }
 });
+
+// THE ONE THING A COORDINATION BOARD MUST NEVER DO: hand the same task to two agents.
+//
+// A live all-agent company has many agents talking to ONE agent-hq over HTTP, racing for work. This
+// drives the real deployment: twelve clients lunge for one task, all requests in flight at once, and
+// the outcome must be exactly one winner — the rest refused, not silently dropped, all told the same
+// holder.
+//
+// Honest about what this guards: the property is DOUBLY assured, so no single mutation to claim()
+// breaks it. node:sqlite is synchronous and the server is one event loop, so each claim runs to
+// completion before the next even under a stampede — and on top of that, claim() is a single atomic
+// UPDATE ... WHERE. I checked: replacing the atomic UPDATE with a read-then-write still passes here,
+// because the serialization alone already prevents the double-claim. So this is a standing guarantee
+// of the OUTCOME, not a proof of the UPDATE's atomicity — and it is the regression guard that fires
+// the day claiming becomes async (an async DB driver, an await between the read and the write), which
+// is exactly when the atomic UPDATE stops being redundant and starts being the only thing saving you.
+test('serve: a stampede of concurrent claims on one task yields exactly ONE winner', async () => {
+  const server = createHqServer();
+  await new Promise((r) => server.listen(0, r));
+  const base = `http://localhost:${server.address().port}`;
+  const post = (p, body) => fetch(base + p, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  }).then((r) => r.json());
+  try {
+    const board = await post('/api/boards', { name: 'Stampede' });
+    const task = await post('/api/tasks', { board_id: board.id, title: 'the one contested task' });
+
+    // twelve agents lunge for it at the same instant — all requests in flight before any resolves
+    const results = await Promise.all(
+      Array.from({ length: 12 }, (_, i) => post(`/api/tasks/${task.id}/claim`, { agent: `racer-${i}` })));
+
+    const winners = results.filter((r) => r.ok === true);
+    const refused = results.filter((r) => r.ok === false);
+    assert.equal(winners.length, 1, `exactly one claim may succeed — got ${winners.length}`);
+    assert.equal(refused.length, 11, 'and the other eleven are refused, not silently dropped');
+    // every refusal names the SAME holder — the winner — so nobody is told a different story
+    const holder = winners[0].task.assignee;
+    assert.ok(refused.every((r) => r.held_by === holder), 'all refusals cite the one true holder');
+    // and the board itself agrees there is a single assignee
+    const tasks = await fetch(`${base}/api/tasks?board_id=${board.id}`).then((r) => r.json());
+    assert.equal(tasks.find((t) => t.id === task.id).assignee, holder, 'the board shows one owner');
+  } finally { server.close(); }
+});
