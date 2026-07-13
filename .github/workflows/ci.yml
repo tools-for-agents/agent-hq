@@ -38,6 +38,22 @@ jobs:
   # the page 250px sideways, and controls at 2.4:1, past a green `node --test` — a
   # test suite does not look at the page. iris does: phone, tablet and desktop, in
   # both themes, and it fails here rather than in front of someone.
+  # CAN THE TEST SUITE STILL FAIL? Break the code on purpose in the places whose breakage
+  # costs the most, and demand the suite goes RED. A surviving canary means the test guarding
+  # that line has stopped guarding it.
+  #
+  # It found one here immediately: reapStale's cutoff — WHO IS ALIVE, the question this board
+  # exists to answer — could have its minus flipped to a plus with the whole suite green.
+  mutants:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: break it on purpose — every canary must die
+        run: node scripts/mutants.mjs
+
   look:
     runs-on: ubuntu-latest
     steps:

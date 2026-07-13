@@ -694,3 +694,38 @@ test('nothing the MCP server can reach is allowed to print to stdout', async () 
   assert.deepEqual(offenders, [],
     'stdout is the protocol — one stray print desyncs every agent session:\n  ' + offenders.join('\n  '));
 });
+
+// WHO IS ALIVE? That is the question the board exists to answer, and nothing was guarding it.
+//
+// reapStale() marks an agent offline when its heartbeat goes quiet:
+//
+//   const cutoff = new Date(Date.now() - threshold_ms).toISOString();
+//
+// A canary flipped that minus to a plus and the entire suite stayed green. With a plus the
+// cutoff lands in the FUTURE, so EVERY agent is older than it — an agent that heartbeated one
+// second ago is marked offline, and an "went offline" event is emitted for every agent on
+// every call. The board would show a working team as an empty room.
+//
+// Both directions, because one alone is a half-truth: a FRESH heartbeat must survive the reap,
+// and a STALE one must not.
+test('reapStale offlines the quiet agent and leaves the live one alone', async () => {
+  const { run } = await import('../src/db.js');
+  const live = Agents.register({ name: 'Live-reaper', role: 'worker', avatar: '🟢' });
+  const quiet = Agents.register({ name: 'Quiet-reaper', role: 'worker', avatar: '🔴' });
+
+  Agents.heartbeat(live.id);
+  // backdate the other one's heartbeat past the threshold — the only way to be stale
+  const longAgo = new Date(Date.now() - 10 * 60_000).toISOString();
+  run('UPDATE agents SET last_seen=?, status=? WHERE id=?', longAgo, 'working', quiet.id);
+
+  const { offlined } = Agents.reapStale(90_000);
+  assert.ok(offlined >= 1, 'the agent that went quiet ten minutes ago is offlined');
+
+  assert.equal(Agents.get(quiet.id).status, 'offline', 'a stale heartbeat means offline');
+  assert.notEqual(Agents.get(live.id).status, 'offline',
+    'AN AGENT THAT JUST HEARTBEATED IS NOT OFFLINE — the reaper must not sweep the living');
+
+  // and a heartbeat brings it back: offline is a statement about silence, not a death sentence
+  Agents.heartbeat(quiet.id);
+  assert.notEqual(Agents.get(quiet.id).status, 'offline', 'a heartbeat revives it');
+});
