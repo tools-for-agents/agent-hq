@@ -775,3 +775,66 @@ test('reading the inbox does not consume it — unless you say so', () => {
     'mark_read: true is the only thing that consumes the message');
   assert.equal(mine().is_read, true, 'and it stays read');
 });
+
+// AN AGENT THAT DIES MUST NOT TAKE THE TASK WITH IT.
+//
+// A claim is a LEASE, not a deed. The whole point of the lease_until column is that an agent
+// which crashes, hangs or is killed mid-task eventually lets go — and somebody else picks the
+// work up. Without that, one dead agent silently removes a task from the board forever, and an
+// all-agent company deadlocks one task at a time with nothing to show for it.
+//
+// The suite proved a LIVE lease blocks a second claimant. It never proved an EXPIRED one lets
+// go — the direction that actually rescues you. Both halves, or it is a half-truth.
+test('a lease that has expired can be claimed by somebody else — a live one cannot', async () => {
+  const { run, get } = await import('../src/db.js');
+  const b = Boards.create({ name: 'Lease board' });
+  const t = Tasks.create({ board_id: b.id, title: 'the task the dead agent was holding' });
+
+  assert.equal(Tasks.claim(t.id, 'agent-alive').ok, true, 'the first agent takes it');
+  const blocked = Tasks.claim(t.id, 'agent-other');
+  assert.equal(blocked.ok, false, 'a LIVE lease blocks everyone else');
+  assert.equal(blocked.held_by, 'agent-alive', 'and says who is holding it');
+
+  // The agent dies. Nothing announces that; the lease simply runs out.
+  run('UPDATE tasks SET lease_until=? WHERE id=?', new Date(Date.now() - 60_000).toISOString(), t.id);
+
+  const rescued = Tasks.claim(t.id, 'agent-other');
+  assert.equal(rescued.ok, true,
+    'AN EXPIRED LEASE LETS GO — otherwise one dead agent removes a task from the board forever');
+  assert.equal(get('SELECT assignee FROM tasks WHERE id=?', t.id).assignee, 'agent-other',
+    'and the work now belongs to whoever picked it up');
+});
+
+// A WRONG NUMBER DRESSED AS A MEASUREMENT.
+//
+// kanban_flow is an MCP tool: an agent asks "how is the team actually doing?" and gets back a
+// median cycle time, an average, and the five slowest tasks. FOUR separate mutants survived in
+// that arithmetic — the sort could be reversed, the median could SUBTRACT instead of add, the
+// average could subtract, and "slowest" could return the fastest. The suite was green for all of
+// them, because nothing ever checked a number it knew the answer to.
+//
+// So: four tasks, created a known number of hours ago, all finished now. The maths is not a
+// matter of opinion.
+//     cycles = [1, 2, 10, 20]  ->  median = (2 + 10) / 2 = 6   avg = 33/4 = 8.3   slowest = 20
+test('flow reports the cycle time it actually measured — median, average and slowest', async () => {
+  const { run } = await import('../src/db.js');
+  const b = Boards.create({ name: 'Flow board' });
+  const hoursAgo = (h) => new Date(Date.now() - h * 3_600_000).toISOString();
+
+  for (const h of [1, 2, 10, 20]) {
+    const t = Tasks.create({ board_id: b.id, title: `took ${h}h` });
+    run('UPDATE tasks SET created_at=? WHERE id=?', hoursAgo(h), t.id);
+    Tasks.update(t.id, { column: 'Done' }, 'flow-agent');      // finished, now
+  }
+
+  // Scope to OUR actor. flow() aggregates every finished task in the window, and the other
+  // tests in this file create-and-finish tasks in milliseconds — a pile of ~0h cycles that drag
+  // the median to zero. My first cut of this test asserted against that pile and failed: the
+  // tool was right and the test was measuring the wrong population.
+  const f = Flow.summary({ days: 2, actor: 'flow-agent' });
+  const mine = f.slowest.filter((s) => /^took \d+h$/.test(s.title));
+  assert.equal(f.cycle.n, 4, 'it measured exactly the four tasks this test finished');
+  assert.equal(f.cycle.median_hours, 6, `the median of [1,2,10,20] is 6, got ${f.cycle.median_hours}`);
+  assert.equal(f.cycle.avg_hours, 8.3, `the average of [1,2,10,20] is 8.3, got ${f.cycle.avg_hours}`);
+  assert.equal(mine[0].hours, 20, `the SLOWEST is the 20h task, got ${mine[0]?.hours}`);
+});

@@ -59,6 +59,24 @@ const CANARIES = [
     find: '    if (q) { sql += ` AND (title LIKE ? OR content LIKE ?)`; args.push(`%${q}%`, `%${q}%`); }',
     into: '    if (false) { sql += ` AND (title LIKE ? OR content LIKE ?)`; args.push(`%${q}%`, `%${q}%`); }',
   },
+  {
+    why: 'the median cycle time must ADD the middle pair, not subtract it — a wrong number dressed as a measurement',
+    file: 'src/services.js',
+    find: '        : Math.round((sorted[sorted.length / 2 - 1].hours + sorted[sorted.length / 2].hours) / 2 * 10) / 10)',
+    into: '        : Math.round((sorted[sorted.length / 2 - 1].hours - sorted[sorted.length / 2].hours) / 2 * 10) / 10)',
+  },
+  {
+    why: '"slowest" must be the slowest — reverse the sort and an agent is shown the fastest work as the worst',
+    file: 'src/services.js',
+    find: '      slowest: [...cycles].sort((a, b) => b.hours - a.hours).slice(0, 5),',
+    into: '      slowest: [...cycles].sort((a, b) => a.hours - b.hours).slice(0, 5),',
+  },
+  {
+    why: 'an expired lease must LET GO — otherwise one dead agent removes a task from the board forever',
+    file: 'src/services.js',
+    find: "       WHERE id=? AND (assignee IS NULL OR assignee='' OR assignee=? OR lease_until IS NULL OR lease_until < ?)`,",
+    into: "       WHERE id=? AND (assignee IS NULL OR assignee='' OR assignee=?)`,",
+  },
 ];
 
 const run = () => spawnSync('npm', ['test'], { encoding: 'utf8', timeout: 300_000 }).status;
