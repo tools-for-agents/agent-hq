@@ -21,6 +21,7 @@ class ApiError extends Error {}
 
 function apiDown(msg) {
   ASKED('error');   // a failure is not an answer of "nothing"
+  lastFailed = true;   // ...and busy(false) must not overwrite that when the request settles
   let b = document.getElementById('apidown');
   if (!b) {
     b = document.createElement('div');
@@ -86,6 +87,12 @@ let inflight = 0, busyTimer = null;
 // fetches at all is untouched and shows its empty state exactly as before. (Hiding it
 // unconditionally would have hidden it FOREVER on any page with no API.)
 let everAnswered = false;
+// A REQUEST THAT FAILED IS NOT AN ANSWER — and busy(false) used to say it was.
+// apiDown() sets ASKED('error') so the empty state is withheld... and then the `finally`
+// block ran busy(false), which declared ASKED('yes') the moment the request SETTLED,
+// success or failure alike. The claim came straight back, milliseconds later, and the board
+// said "The server said no" and "you have nothing" AT THE SAME TIME.
+let lastFailed = false;
 const ASKED = (v) => document.documentElement.setAttribute('data-asked', v);
 
 (function withholdTheClaim() {
@@ -103,7 +110,11 @@ function busy(on) {
   // Before the first answer lands, the app has not been told "nothing" — it has not been
   // told anything — so it must not say "nothing".
   if (inflight > 0 && !everAnswered) ASKED('no');
-  if (inflight === 0 && !on) { everAnswered = true; ASKED('yes'); }
+  if (on && inflight === 1) lastFailed = false;   // a fresh batch: nothing has failed yet
+  if (inflight === 0 && !on) {
+    if (lastFailed) ASKED('error');                // settled, but nobody answered
+    else { everAnswered = true; ASKED('yes'); }
+  }
   if (inflight > 0) {
     if (busyTimer) return;
     // 300ms: below this a human reads it as "instant", and a pill that flashes on every

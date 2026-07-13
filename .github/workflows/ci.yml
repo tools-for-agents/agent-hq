@@ -172,7 +172,7 @@ jobs:
           boot: >-
             const f=window.fetch;window.fetch=(u,o)=>String(u).includes('/api/')?Promise.resolve(new Response('{"error":"ci"}',{status:500,headers:{'content-type':'application/json'}})):f(u,o);
           pre: >-
-            const b=document.getElementById('apidown');if(!b||b.hidden||!b.textContent.trim()) throw new Error('the server said no and the page said NOTHING');
+            const b=document.getElementById('apidown');if(!b||b.hidden||!b.textContent.trim()) throw new Error('the server said no and the page said NOTHING');const shown=e=>{const s=getComputedStyle(e),r=e.getBoundingClientRect();return s.visibility!=='hidden'&&s.display!=='none'&&r.width>0&&r.height>0;};const vis=[...document.querySelectorAll('.empty,.empty2,.welcome,.list-empty,.detail-empty,.flow-empty,.act-empty')].filter(shown);if(vis.length) throw new Error('THE SERVER SAID NO, AND THE PAGE STILL CLAIMS YOU HAVE NOTHING: '+vis.map(e=>e.id||e.className).join(', '));
 
   # ── AND WHAT DOES IT DRAW WHILE THE SERVER IS STILL THINKING? ─────────────────
   # This app had exactly ONE way of showing "nothing": nothing. So three completely
