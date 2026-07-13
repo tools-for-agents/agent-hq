@@ -91,6 +91,22 @@ test('memory: write then search finds it — AND EXCLUDES WHAT DOES NOT MATCH', 
     'a memory that matches nothing in the query must NOT come back — this is a search, not a list');
 });
 
+test('memory: a tag filter with a LIKE metacharacter matches literally, not as a wildcard', () => {
+  // The tag filter is a LIKE over the JSON tags array, so a `_` in the tag would match any char
+  // ('a_b' → 'axb') and a `%` any run ('ci%' → 'cicd') unless the metacharacters are escaped.
+  const under = Memory.write({ title: 'Underscore memo', content: 'x', tags: ['a_b'] });
+  const axb = Memory.write({ title: 'Decoy memo', content: 'x', tags: ['axb'] });
+  const hits = Memory.search({ tag: 'a_b', limit: 200 }).map((m) => m.id);
+  assert.ok(hits.includes(under.id), "the literal 'a_b' tag is found");
+  assert.ok(!hits.includes(axb.id), "'a_b' does not wildcard-match 'axb'");
+
+  // the free-text `q` search is a LIKE too — 'node_modules' must not match 'nodexmodules'
+  const real = Memory.write({ title: 'node_modules woes', content: 'deps' });
+  const decoy = Memory.write({ title: 'nodexmodules typo', content: 'decoy' });
+  const q = Memory.search({ q: 'node_modules', limit: 200 }).map((m) => m.id);
+  assert.ok(q.includes(real.id) && !q.includes(decoy.id), "q='node_modules' matches literally, not 'nodexmodules'");
+});
+
 test('memory: agent_id filter surfaces an agent\'s authored memories (the agent-detail modal)', () => {
   const a = Agents.register({ name: 'Scribe', role: 'writer', avatar: '✍️' });
   const m = Memory.write({ agent_id: a.id, title: 'Authored note', content: 'x', namespace: 'authors' });

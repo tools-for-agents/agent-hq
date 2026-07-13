@@ -13,6 +13,11 @@ function emit(activity) {
 // a query param) to a positive integer, capped, else the default — so a bad
 // `?limit=abc` can't bind `LIMIT NaN` (SQL error) or slice(0, NaN) to nothing.
 const posInt = (v, def, cap = 500) => (Number.isFinite(+v) && +v > 0 ? Math.min(Math.floor(+v), cap) : def);
+// A user's search term or tag can contain LIKE metacharacters (`%`, `_`). Left raw they act as
+// wildcards — a `q` of 'node_modules' matches 'nodexmodules', a tag 'a_b' matches 'axb'. Escape
+// them (and the escape char) and pair every use with `ESCAPE '\'`.
+const likeEsc = (s) => String(s).replace(/[\\%_]/g, '\\$&');
+const tagLike = (tag) => `%"${likeEsc(tag)}"%`;
 
 const parse = (row, ...fields) => {
   if (!row) return row;
@@ -507,10 +512,10 @@ export const Memory = {
     }
     let sql = `SELECT * FROM memories WHERE 1=1`;
     const args = [];
-    if (q) { sql += ` AND (title LIKE ? OR content LIKE ?)`; args.push(`%${q}%`, `%${q}%`); }
+    if (q) { const p = `%${likeEsc(q)}%`; sql += ` AND (title LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\')`; args.push(p, p); }
     if (agent_id) { sql += ` AND (agent_id=? OR agent_id IS NULL)`; args.push(agent_id); }
     if (namespace) { sql += ` AND namespace=?`; args.push(namespace); }
-    if (tag) { sql += ` AND tags LIKE ?`; args.push(`%"${tag}"%`); }
+    if (tag) { sql += ` AND tags LIKE ? ESCAPE '\\'`; args.push(tagLike(tag)); }
     sql += ` ORDER BY importance DESC, updated_at DESC LIMIT ?`; args.push(posInt(limit, 25, 200));
     return all(sql, ...args).map((m) => parse(m, 'tags'));
   },
