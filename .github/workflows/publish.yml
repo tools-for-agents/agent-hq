@@ -36,7 +36,20 @@ jobs:
 
       - run: npm test
 
-      - run: npm publish --access public
+      # Idempotent on purpose: if the version is already on npm, SKIP publish and go straight to
+      # the registry. npm rejects a re-publish of an existing version with a hard error — so without
+      # this, a run that published to npm but then failed at the registry (a transient error, an OIDC
+      # hiccup) could never be retried: the re-run would die here, at npm, before ever reaching the
+      # registry step, leaving the package on npm and absent from the registry forever.
+      - name: publish to npm (skip if this exact version is already there)
+        run: |
+          name=$(node -p "require('./package.json').name")
+          version=$(node -p "require('./package.json').version")
+          if npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "$name@$version is already on npm — skipping publish, continuing to the registry."
+          else
+            npm publish --access public
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
