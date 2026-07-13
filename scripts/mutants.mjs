@@ -95,6 +95,12 @@ const CANARIES = [
     find: '  const cost = (inputTokens / 1e6) * pi + (outputTokens / 1e6) * po;',
     into: '  const cost = (inputTokens / 1e6) * pi - (outputTokens / 1e6) * po;',
   },
+  {
+    why: 'a HQ_PRICE_ override the user set must actually take — dropping it silently bills at the wrong rate',
+    file: 'src/pricing.js',
+    find: '    if (Number.isFinite(i) && Number.isFinite(o)) out[model] = [i, o];',
+    into: '    if (false) out[model] = [i, o];',
+  },
 ];
 
 // spawnSync returns status:null when IT kills the child for exceeding the timeout — a TIMEOUT,

@@ -912,3 +912,24 @@ test('run.record auto-prices a run when the agent gives tokens but no cost', () 
   const r2 = Ledger.record({ label: 'explicit', model: 'claude-opus-4-8', input_tokens: 1e6, output_tokens: 1e6, cost_usd: 0.5 });
   assert.equal(r2.cost_usd, 0.5, 'an explicit cost_usd is honoured over the computed one');
 });
+
+// HQ_PRICE_<model>="in,out" IS HOW A USER SETS THEIR REAL CONTRACT RATES — and it was untested.
+//
+// The default table is a placeholder; a real deployment overrides it via env. If that override
+// silently did nothing, the user would configure their rates, see the ledger, and trust numbers
+// computed at the wrong price — the config saying one thing and the tool doing another, on money.
+//
+// TABLE is built at module load, so the env must be set BEFORE a fresh import (cache-busted).
+test('a HQ_PRICE_ env override sets the rate for that model, and a malformed one is ignored', async () => {
+  const saved = { ...process.env };
+  process.env.HQ_PRICE_opus = '10,50';        // half the default opus rate
+  process.env.HQ_PRICE_widget = 'not,numbers'; // malformed → must be ignored, not crash
+  try {
+    const { costOf } = await import(`../src/pricing.js?override=${Date.now()}`);
+    assert.equal(costOf('claude-opus-4-8', 1e6, 1e6), 60,
+      'the override rate is used (10 + 50), NOT the default 90 — a user who sets a rate must get it');
+    assert.equal(costOf('widget-model', 1e6, 1e6), 18,
+      'a malformed override is ignored and falls back to the default, not to 0 or NaN');
+    assert.equal(costOf('claude-sonnet-5', 1e6, 0), 3, 'a model the user did not override keeps the default');
+  } finally { for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k]; Object.assign(process.env, saved); }
+});
