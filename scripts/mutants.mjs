@@ -85,11 +85,26 @@ const CANARIES = [
   },
 ];
 
-const run = () => spawnSync('npm', ['test'], { encoding: 'utf8', timeout: 300_000 }).status;
+// spawnSync returns status:null when IT kills the child for exceeding the timeout — a TIMEOUT,
+// not a test failure. Reading that as "the suite is already red" turns a slow suite into a broken
+// one. Distinguish them: a suite that never finished has not answered, and a mutant that makes the
+// suite hang has not been "killed". (Only iris is slow enough to hit this, but the bug was latent
+// in every copy of this helper.)
+const TIMEOUT_MS = 600_000;
+const run = () => {
+  const r = spawnSync('npm', ['test'], { encoding: 'utf8', timeout: TIMEOUT_MS });
+  return { failed: r.status !== 0, timedOut: r.signal === 'SIGTERM' || r.error?.code === 'ETIMEDOUT' };
+};
 
 // The baseline must be GREEN, or every canary "dies" for free and this job proves nothing.
 console.log('baseline…');
-if (run() !== 0) { console.error('THE SUITE IS ALREADY RED. Nothing can be proven from here.'); process.exit(1); }
+const base = run();
+if (base.timedOut) {
+  console.error(`THE SUITE DID NOT FINISH within ${TIMEOUT_MS / 1000}s — a timeout, not a failure. `
+    + 'Raise TIMEOUT_MS or speed up the suite; do not read a slow suite as a broken one.');
+  process.exit(1);
+}
+if (base.failed) { console.error('THE SUITE IS ALREADY RED. Nothing can be proven from here.'); process.exit(1); }
 console.log('baseline: green\n');
 
 let dead = 0;
@@ -102,10 +117,14 @@ for (const c of CANARIES) {
     dead++; continue;
   }
   writeFileSync(c.file, orig.replace(c.find, c.into));
-  const status = run();
+  const res = run();
   writeFileSync(c.file, orig);
 
-  if (status === 0) {
+  // A timeout on a mutant is NOT a kill: a broken mutant can hang instead of failing fast.
+  if (res.timedOut) {
+    console.error(`✗ INCONCLUSIVE — the suite timed out with this broken, so we cannot say it was killed:\n    ${c.why}`);
+    dead++;
+  } else if (!res.failed) {
     console.error(`✗ SURVIVED — the suite went GREEN with this broken:\n    ${c.why}\n` +
       `    ${c.file}\n  Nothing is guarding that line any more.`);
     dead++;
