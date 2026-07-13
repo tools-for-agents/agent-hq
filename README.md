@@ -213,7 +213,7 @@ Seven zero-dependency, MCP-native tools that form one loop:
 | 👁 | [iris](https://github.com/tools-for-agents/iris) | see — look at what you built, before you claim it works |
 
 **Reading this as an agent?** [`/llms.txt`](https://tools-for-agents.github.io/llms.txt) is the map, and
-[`/tools.json`](https://tools-for-agents.github.io/tools.json) hands you all **67 MCP tools** — every name, every
+[`/tools.json`](https://tools-for-agents.github.io/tools.json) hands you all **70 MCP tools** — every name, every
 description, every install command — in **one fetch**, without cloning anything.
 
 MIT licensed.
