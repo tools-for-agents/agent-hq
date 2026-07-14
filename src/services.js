@@ -13,6 +13,30 @@ function emit(activity) {
 // a query param) to a positive integer, capped, else the default — so a bad
 // `?limit=abc` can't bind `LIMIT NaN` (SQL error) or slice(0, NaN) to nothing.
 const posInt = (v, def, cap = 500) => (Number.isFinite(+v) && +v > 0 ? Math.min(Math.floor(+v), cap) : def);
+// ≈4 chars/token — the same estimate every other tool in this kit uses, so the budgets mean the
+// same thing across them.
+const estTokens = (s) => Math.ceil(String(s || '').length / 4);
+// The token budget for what memory_search hands back. It returned the FULL content of every match:
+// one 4MB memory made a single search return ~1,110,000 tokens. `limit` capped how MANY rows came
+// back and said nothing about how BIG they were — a limit on how many is not a limit on how much.
+const MEM_MAX_TOKENS = 4000;
+
+// 🔑 A LIST IS NOT A RECORD. kanban_board and kanban_list_tasks shipped the FULL description of EVERY
+// task: one 1.2MB description made each of them return ~300,000 tokens. And nothing was even reading
+// it — the dashboard renders cards from title/labels and fetches the body separately when you open a
+// task (`GET /api/tasks/:id`), so every board payload carried a megabyte that NOTHING RENDERS.
+// A list gives you enough to CHOOSE; the record gives you the thing. Cards get a preview.
+const CARD_DESC_CHARS = 400;
+const preview = (t) => {
+  const d = String(t.description || '');
+  if (d.length <= CARD_DESC_CHARS) return t;
+  // Say so. A body silently cut to 400 chars reads as a task whose description simply ends there.
+  return { ...t, description: d.slice(0, CARD_DESC_CHARS) + '…', description_truncated: true,
+    description_tokens: estTokens(d) };
+};
+// The single-record read. Generous — a real description must never be clipped in the dashboard modal
+// — but not unbounded: kanban_get_task on a 1.2MB description handed a model ~300,000 tokens.
+const TASK_MAX_TOKENS = 20_000;
 // A user's search term or tag can contain LIKE metacharacters (`%`, `_`). Left raw they act as
 // wildcards — a `q` of 'node_modules' matches 'nodexmodules', a tag 'a_b' matches 'axb'. Escape
 // them (and the escape char) and pair every use with `ESCAPE '\'`.
@@ -123,7 +147,7 @@ export const Boards = {
     board.columns = all(`SELECT * FROM columns WHERE board_id=? ORDER BY position`, id);
     for (const col of board.columns) {
       col.tasks = all(`SELECT * FROM tasks WHERE column_id=? ORDER BY position, created_at`, col.id)
-        .map((t) => parse(t, 'labels'))
+        .map((t) => preview(parse(t, 'labels')))
         .map((t) => {
           const deps = depsOf.get(t.id) || [];
           const blockers = deps.filter((d) => !isDone(d));
@@ -263,11 +287,21 @@ function columnByName(board_id, name) {
 }
 
 export const Tasks = {
-  get(id) {
+  get(id, { max_tokens = TASK_MAX_TOKENS } = {}) {
     const t = parse(get(`SELECT * FROM tasks WHERE id=?`, id), 'labels');
     if (!t) return null;
     t.comments = all(`SELECT * FROM comments WHERE task_id=? ORDER BY created_at`, id);
     t.deps = all(`SELECT depends_on FROM task_deps WHERE task_id=?`, id).map((r) => r.depends_on);
+    // The record DOES carry the body — that is what a record is for — but not without a ceiling.
+    // A budget, not a wall: raise max_tokens and the rest comes back.
+    max_tokens = posInt(max_tokens, TASK_MAX_TOKENS, 1_000_000);
+    const d = String(t.description || '');
+    if (estTokens(d) > max_tokens) {
+      t.description_tokens = estTokens(d);
+      t.description_truncated = true;
+      t.description = d.slice(0, max_tokens * 4)
+        + `\n\n…[truncated at ${max_tokens} of ${t.description_tokens} tokens — raise max_tokens to read the rest]`;
+    }
     return t;
   },
 
@@ -303,7 +337,7 @@ export const Tasks = {
     if (assignee) { sql += ` AND t.assignee=?`; args.push(assignee); }
     if (status) { sql += ` AND lower(c.name)=lower(?)`; args.push(status); }
     sql += ` ORDER BY t.position, t.created_at`;
-    return all(sql, ...args).map((t) => parse(t, 'labels'));
+    return all(sql, ...args).map((t) => preview(parse(t, 'labels')));
   },
 
   create({ board_id, column, title, description = '', assignee = null, priority = 'medium', labels = [], created_by = null, force = false }) {
@@ -498,7 +532,7 @@ export const Memory = {
     return parse(get(`SELECT * FROM memories WHERE id=?`, id), 'tags');
   },
 
-  search({ q = '', agent_id, namespace, tag, limit = 25 } = {}) {
+  search({ q = '', agent_id, namespace, tag, limit = 25, max_tokens = MEM_MAX_TOKENS } = {}) {
     // Same shape as the kanban filters: a namespace that does not exist returned [], and
     // an agent reads that as "the company remembers nothing about this". Namespaces are a
     // finite, knowable set — so a name that is not in it is a typo, not an answer.
@@ -517,7 +551,34 @@ export const Memory = {
     if (namespace) { sql += ` AND namespace=?`; args.push(namespace); }
     if (tag) { sql += ` AND tags LIKE ? ESCAPE '\\'`; args.push(tagLike(tag)); }
     sql += ` ORDER BY importance DESC, updated_at DESC LIMIT ?`; args.push(posInt(limit, 25, 200));
-    return all(sql, ...args).map((m) => parse(m, 'tags'));
+    const rows = all(sql, ...args).map((m) => parse(m, 'tags'));
+
+    // 🔑 `SELECT *` HANDED BACK THE FULL CONTENT OF EVERY MATCH, UNBOUNDED. One 4MB memory made
+    // memory_search return 4.23MB — ~1,110,000 TOKENS — in 9ms. It never hangs and it never errors:
+    // it just quietly empties a million tokens into the model's context. Every sibling search in this
+    // kit returns a bounded excerpt (cortex/scout snippet, lens truncates, recall budgets); this one
+    // returned everything, and the limit it did have counted ROWS, not SIZE. A LIMIT ON HOW MANY IS
+    // NOT A LIMIT ON HOW MUCH.
+    //
+    // It has to be a BUDGET, not a cap: Memory has no get(), so search is the only way to read a
+    // memory's content, and a hard truncation would make a long memory permanently unreadable.
+    // Raise max_tokens and the whole thing comes back.
+    max_tokens = posInt(max_tokens, MEM_MAX_TOKENS, 1_000_000);
+    let spent = 0;
+    for (const m of rows) {
+      const content = String(m.content || '');
+      const full = estTokens(content);
+      const room = Math.max(0, max_tokens - spent);
+      if (full > room) {
+        // Never a silent cut, and never a dead end: say it was cut, how big it is, and what to do.
+        m.content = content.slice(0, room * 4)
+          + `\n…[truncated at ${room} of ${full} tokens — raise max_tokens to read the rest]`;
+        m.truncated = true;
+        m.full_tokens = full;
+      }
+      spent += estTokens(m.content);
+    }
+    return rows;
   },
 
   list: (limit = 100) => all(`SELECT * FROM memories ORDER BY updated_at DESC LIMIT ?`, posInt(limit, 100, 500)).map((m) => parse(m, 'tags')),

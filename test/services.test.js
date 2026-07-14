@@ -992,3 +992,66 @@ test('serve: a stampede of concurrent claims on one task yields exactly ONE winn
     assert.equal(tasks.find((t) => t.id === task.id).assignee, holder, 'the board shows one owner');
   } finally { server.close(); }
 });
+
+test('memory_search bounds HOW MUCH it returns, not just HOW MANY — one memory dumped 1.1M tokens', () => {
+  // `SELECT *` handed back the FULL content of every match, unbounded. One 4MB memory made
+  // memory_search return 4.23MB — ~1,110,000 TOKENS — in 9ms. It never hangs and it never errors: it
+  // just quietly empties a million tokens into the model's context. `limit` capped how MANY rows came
+  // back and said nothing about how BIG they were. A LIMIT ON HOW MANY IS NOT A LIMIT ON HOW MUCH.
+  const big = 'zzbudgetmem lorem ipsum dolor sit amet '.repeat(20_000);   // ~760KB ≈ 190k tokens
+  Memory.write({ title: 'Enormous', content: big, namespace: 'default' });
+  Memory.write({ title: 'Tiny', content: 'a small zzbudgetmem note', namespace: 'default' });
+
+  const hits = Memory.search({ q: 'zzbudgetmem' });
+  const bytes = JSON.stringify(hits).length;
+  assert.ok(bytes / 4 < 5000, `the default budget holds — got ~${Math.round(bytes / 4)} tokens`);
+
+  const huge = hits.find((m) => m.title === 'Enormous');
+  assert.ok(huge, 'the memory is still RETURNED — bounding it must not drop it');
+  assert.equal(huge.truncated, true, 'and it SAYS it was cut — never a silent truncation');
+  assert.ok(huge.full_tokens > 100_000, 'reporting how big it really is, so the cut is not a dead end');
+  assert.match(huge.content, /raise max_tokens/, 'and what to do about it');
+
+  // A BUDGET, not a wall — Memory has no get(), so search is the only way to read the content, and a
+  // hard cap would make a long memory permanently unreadable.
+  const raised = Memory.search({ q: 'zzbudgetmem', max_tokens: 300_000 });
+  assert.ok(JSON.stringify(raised).length / 4 > 100_000, 'raising max_tokens returns the rest');
+
+  // A normal memory is completely unaffected.
+  const tiny = hits.find((m) => m.title === 'Tiny');
+  assert.equal(tiny.truncated, undefined, 'a normal memory is not flagged truncated');
+  assert.ok(!/truncated at/.test(tiny.content), 'and carries no truncation notice');
+});
+
+test('a LIST is not a RECORD — the board shipped a full description for every task, and nothing read it', () => {
+  // kanban_board and kanban_list_tasks returned the FULL description of EVERY task: one 1.2MB
+  // description made each of them ~300,000 tokens. And nothing was even reading it — the dashboard
+  // renders cards from title/labels and fetches the body separately (GET /api/tasks/:id) when you
+  // open a task. Every board payload carried a megabyte that NOTHING RENDERS.
+  const b = Boards.ensureDefault();
+  const big = 'zz card description '.repeat(30_000);   // ~600KB ≈ 150k tokens
+  Tasks.create({ board_id: b.id, title: 'Huge card', description: big });
+  Tasks.create({ board_id: b.id, title: 'Normal card', description: 'a short description' });
+
+  const tok = (o) => JSON.stringify(o).length / 4;
+  assert.ok(tok(Boards.full(b.id)) < 20_000, `the board is a summary — got ${Math.round(tok(Boards.full(b.id)))} tokens`);
+
+  const list = Tasks.list({ board_id: b.id });
+  assert.ok(tok(list) < 20_000, `the list is a summary — got ${Math.round(tok(list))} tokens`);
+
+  const huge = list.find((t) => t.title === 'Huge card');
+  assert.equal(huge.description_truncated, true, 'a clipped card SAYS so — silence reads as "the description just ends there"');
+  assert.ok(huge.description_tokens > 100_000, 'and reports the real size, so it is not a dead end');
+
+  const normal = list.find((t) => t.title === 'Normal card');
+  assert.equal(normal.description, 'a short description', 'a normal card is byte-identical');
+  assert.equal(normal.description_truncated, undefined, 'and unflagged');
+
+  // The RECORD does carry the body — that is what a record is for — but not without a ceiling.
+  const rec = Tasks.get(huge.id);
+  assert.ok(tok(rec) <= 21_000, `kanban_get_task is bounded — got ${Math.round(tok(rec))} tokens`);
+  assert.equal(rec.description_truncated, true, 'and says it was cut');
+  assert.match(rec.description, /raise max_tokens/, 'and what to do about it');
+  // A budget, not a wall.
+  assert.ok(tok(Tasks.get(huge.id, { max_tokens: 400_000 })) > 100_000, 'raising max_tokens returns the rest');
+});

@@ -19,7 +19,7 @@
 // Each canary must have EXACTLY ONE anchor. An anchor that has drifted is a canary that
 // silently stopped watching, so a missing or ambiguous anchor is a hard failure, never a skip.
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 
 const CANARIES = [
@@ -101,6 +101,24 @@ const CANARIES = [
     find: '    if (Number.isFinite(i) && Number.isFinite(o)) out[model] = [i, o];',
     into: '    if (false) out[model] = [i, o];',
   },
+  {
+    why: 'memory_search bounds HOW MUCH, not just how many — unbounded, ONE 4MB memory returned 1,110,000 tokens',
+    file: 'src/services.js',
+    find: 'const MEM_MAX_TOKENS = 4000;',
+    into: 'const MEM_MAX_TOKENS = Infinity;',
+  },
+  {
+    why: 'a LIST is not a RECORD — the board shipped the FULL description of every task (300,000 tokens) and nothing rendered it',
+    file: 'src/services.js',
+    find: 'const CARD_DESC_CHARS = 400;',
+    into: 'const CARD_DESC_CHARS = Infinity;',
+  },
+  {
+    why: 'kanban_get_task is bounded — a 1.2MB description handed a model 300,000 tokens in one call',
+    file: 'src/services.js',
+    find: 'const TASK_MAX_TOKENS = 20_000;',
+    into: 'const TASK_MAX_TOKENS = Infinity;',
+  },
 ];
 
 // spawnSync returns status:null when IT kills the child for exceeding the timeout — a TIMEOUT,
@@ -116,6 +134,37 @@ const run = () => {
   const skipped = +(`${r.stdout || ''}${r.stderr || ''}`.match(/^\s*(?:ℹ|#)\s*skipped\s+(\d+)/m)?.[1] || 0);
   return { failed: r.status !== 0, timedOut: r.signal === 'SIGTERM' || r.error?.code === 'ETIMEDOUT', skipped };
 };
+
+// 🔑 AND IT MUST NOT RUN TWICE AT ONCE. This tool EDITS YOUR SOURCE IN PLACE, so two concurrent runs
+// do not merely confuse each other — they can make a planted bug PERMANENT:
+//
+//     run B plants a mutation in core.js
+//     run A reads core.js as its "original"      ← the original now CONTAINS B's bug
+//     run B restores its own copy
+//     run A restores ITS "original"              ← re-plants B's bug, and A believes it cleaned up
+//
+// The sabotage is now in your tree, no process is left to undo it, and the tool that put it there
+// reports success. It is not theoretical: two overlapping runs turned this repo's suite red, and the
+// only message was "THE SUITE IS ALREADY RED" — which names neither the file nor the line.
+// An exclusive lock, taken BEFORE the baseline (a concurrent run poisons the baseline too).
+const LOCK = new URL('../.mutants.lock', import.meta.url);
+try {
+  writeFileSync(LOCK, String(process.pid), { flag: 'wx' });   // wx = fail if it already exists
+} catch {
+  let holder = '?';
+  try { holder = readFileSync(LOCK, 'utf8').trim(); } catch { /* raced with a clean exit */ }
+  const alive = holder !== '?' && (() => { try { process.kill(+holder, 0); return true; } catch { return false; } })();
+  if (alive) {
+    console.error(`another mutants run (pid ${holder}) is already editing this source tree. `
+      + 'Two at once can make a planted bug PERMANENT — see the note above. Wait for it, or kill it.');
+    process.exit(1);
+  }
+  // The holder is gone (killed before it could clean up). Its restore-on-exit ran, so the tree is
+  // sound; the lock is just litter. Take it.
+  writeFileSync(LOCK, String(process.pid));
+}
+const dropLock = () => { try { unlinkSync(LOCK); } catch {} };
+process.on('exit', dropLock);
 
 // The baseline must be GREEN, or every canary "dies" for free and this job proves nothing.
 console.log('baseline…');

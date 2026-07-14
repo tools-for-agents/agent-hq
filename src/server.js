@@ -64,7 +64,7 @@ route('GET', '/api/flow', (_p, _b, q) => Flow.summary({ days: q.days, actor: q.a
 // Tasks
 route('GET', '/api/tasks', (_p, _b, q) => Tasks.list(q));
 route('POST', '/api/tasks', (_p, body) => Tasks.create(body));
-route('GET', '/api/tasks/:id', (p) => Tasks.get(p.id));
+route('GET', '/api/tasks/:id', (p, _b, q) => Tasks.get(p.id, q));
 route('PATCH', '/api/tasks/:id', (p, body) => Tasks.update(p.id, body, body._actor));
 route('DELETE', '/api/tasks/:id', (p, body) => Tasks.remove(p.id, body && body._actor));
 route('POST', '/api/tasks/:id/comments', (p, body) => Tasks.comment(p.id, body));

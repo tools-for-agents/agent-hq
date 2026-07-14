@@ -84,10 +84,12 @@ const tools = [
       type: 'object',
       properties: {
         task_id: { type: 'string', description: 'The task id to read' },
+        max_tokens: { type: 'integer', description: 'token ceiling for the description (default 20000). Truncation is reported, with its full size.' },
       },
       required: ['task_id'],
     },
-    run: (a) => hq('GET', `/api/tasks/${encodeURIComponent(a.task_id)}`),
+    run: (a) => hq('GET', `/api/tasks/${encodeURIComponent(a.task_id)}`
+      + (a.max_tokens ? `?max_tokens=${encodeURIComponent(a.max_tokens)}` : '')),
   },
   {
     name: 'kanban_list_tasks',
@@ -321,7 +323,8 @@ const tools = [
         agent_id: { type: 'string' },
         namespace: { type: 'string' },
         tag: { type: 'string' },
-        limit: { type: 'integer' },
+        limit: { type: 'integer', description: 'how MANY memories come back (default 25). Not a limit on how MUCH — see max_tokens.' },
+        max_tokens: { type: 'integer', description: 'token ceiling for the content returned across all results (default 4000). Truncation is reported per memory, with its full size.' },
       },
     },
     run: (a) => {
