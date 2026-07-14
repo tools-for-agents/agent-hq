@@ -111,7 +111,10 @@ const CANARIES = [
 const TIMEOUT_MS = 600_000;
 const run = () => {
   const r = spawnSync('npm', ['test'], { encoding: 'utf8', timeout: TIMEOUT_MS });
-  return { failed: r.status !== 0, timedOut: r.signal === 'SIGTERM' || r.error?.code === 'ETIMEDOUT' };
+  // A SKIPPED test cannot kill a canary — it did not run. So the skip count is not trivia here:
+  // it is the difference between "nothing guards this line" and "the guard never got to look".
+  const skipped = +(`${r.stdout || ''}${r.stderr || ''}`.match(/^\s*(?:ℹ|#)\s*skipped\s+(\d+)/m)?.[1] || 0);
+  return { failed: r.status !== 0, timedOut: r.signal === 'SIGTERM' || r.error?.code === 'ETIMEDOUT', skipped };
 };
 
 // The baseline must be GREEN, or every canary "dies" for free and this job proves nothing.
@@ -123,7 +126,33 @@ if (base.timedOut) {
   process.exit(1);
 }
 if (base.failed) { console.error('THE SUITE IS ALREADY RED. Nothing can be proven from here.'); process.exit(1); }
+// 🔑 A canary cannot be killed by a test that DID NOT RUN. If the baseline skipped tests, then any
+// canary those tests guard will "survive" — and it will look exactly like a coverage hole, sending
+// you to write a test that already exists instead of to the one-line fix (start Docker / install
+// Chrome). Two different facts, two different fixes; they must not print the same sentence.
+// This is anvil's cycle-13 lesson one layer up: in CI a skipped test is a FAILED test, so CI never
+// sees this — it is the LOCAL run that lies, and the local run is where you do the work.
+if (base.skipped) {
+  console.log(`⚠ the baseline SKIPPED ${base.skipped} test(s) — those cannot kill a canary, because they `
+    + 'do not run. A survivor below is far more likely to be a missing dependency than a missing test.');
+}
 console.log('baseline: green\n');
+
+// 🔑 THE MUTATION IS WRITTEN INTO YOUR SOURCE FILE and undone once the suite has run. If this
+// process dies in between — Ctrl-C, SIGTERM, a cancelled CI job, an OOM kill — the planted bug is
+// LEFT IN YOUR TREE: a deliberately subtle one-character sabotage, sitting exactly where your real
+// fix was, ready for the next `git add -A`. It is not hypothetical — a killed run left
+// `raw && !isHtml` in scout's core.js, silently reverting a real fix, and the next mutants run said
+// only "THE SUITE IS ALREADY RED", which names neither the file nor the line.
+//
+// A TOOL THAT PLANTS BUGS ON PURPOSE MUST BE THE ONE THING THAT ALWAYS CLEANS UP AFTER ITSELF.
+// writeFileSync is synchronous, so it is safe in an exit handler.
+let planted = null;                       // { file, orig } while a mutation is on disk
+const restore = () => { if (planted) { writeFileSync(planted.file, planted.orig); planted = null; } };
+process.on('exit', restore);
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP'])
+  process.on(sig, () => { restore(); process.exit(130); });
+process.on('uncaughtException', (e) => { restore(); console.error(e); process.exit(1); });
 
 let dead = 0;
 for (const c of CANARIES) {
@@ -134,17 +163,22 @@ for (const c of CANARIES) {
       'A canary whose anchor has moved is not watching anything. Re-point it.');
     dead++; continue;
   }
+  planted = { file: c.file, orig };
   writeFileSync(c.file, orig.replace(c.find, c.into));
   const res = run();
-  writeFileSync(c.file, orig);
+  restore();
 
   // A timeout on a mutant is NOT a kill: a broken mutant can hang instead of failing fast.
   if (res.timedOut) {
     console.error(`✗ INCONCLUSIVE — the suite timed out with this broken, so we cannot say it was killed:\n    ${c.why}`);
     dead++;
   } else if (!res.failed) {
-    console.error(`✗ SURVIVED — the suite went GREEN with this broken:\n    ${c.why}\n` +
-      `    ${c.file}\n  Nothing is guarding that line any more.`);
+    console.error(`✗ SURVIVED — the suite went GREEN with this broken:\n    ${c.why}\n    ${c.file}`);
+    console.error(res.skipped
+      ? `  …but ${res.skipped} test(s) were SKIPPED. A test that did not run cannot kill a canary, so this\n`
+        + '  is most likely a MISSING DEPENDENCY (docker down? no chrome?), not a missing test.\n'
+        + '  Provide it and re-run — do not go writing a test that may already exist.'
+      : '  Nothing is guarding that line any more.');
     dead++;
   } else {
     console.log(`✓ killed — ${c.why}`);
