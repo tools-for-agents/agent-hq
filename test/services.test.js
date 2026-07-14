@@ -1055,3 +1055,51 @@ test('a LIST is not a RECORD — the board shipped a full description for every 
   // A budget, not a wall.
   assert.ok(tok(Tasks.get(huge.id, { max_tokens: 400_000 })) > 100_000, 'raising max_tokens returns the rest');
 });
+
+test('a RECORD HAS MORE THAN ONE BODY — the comment thread and the inbox were unbounded too', () => {
+  // My own first fix was incomplete: I bounded a task's `description` and left its COMMENT THREAD
+  // alone, so a huge comment STILL returned 413,000 tokens from kanban_get_task. Bounding the field
+  // that happened to be big in your test is not bounding the record. A message body is the same shape.
+  const b = Boards.ensureDefault();
+  const a = Agents.register({ name: 'budget-probe', role: 'qa' });
+  const big = 'zz payload text '.repeat(20_000);   // ~320KB ≈ 80k tokens
+
+  const t = Tasks.create({ board_id: b.id, title: 'Commented', description: 'short' });
+  Tasks.comment(t.id, { author: a.id, body: big });
+  const rec = Tasks.get(t.id);
+  const tok = (o) => JSON.stringify(o).length / 4;
+  assert.ok(tok(rec) <= 21_000, `the record is bounded across ALL its bodies — got ${Math.round(tok(rec))} tokens`);
+  assert.equal(rec.comments[0].body_truncated, true, 'the COMMENT says it was cut, not just the description');
+  assert.ok(rec.comments[0].body_tokens > 50_000, 'and reports its real size');
+
+  Messages.send({ from: a.id, to: a.id, body: big });
+  const inbox = Messages.inbox({ agent: a.id });
+  assert.ok(tok(inbox) <= 5000, `the inbox is bounded — got ${Math.round(tok(inbox))} tokens`);
+  const m = inbox.find((x) => x.body_truncated);
+  assert.ok(m, 'a huge message body says it was cut');
+  assert.ok(m.body_tokens > 50_000, 'and reports its real size');
+  // A budget, not a wall.
+  assert.ok(tok(Messages.inbox({ agent: a.id, max_tokens: 200_000 })) > 50_000, 'raising max_tokens returns the rest');
+
+  // A normal comment and a normal message are byte-identical.
+  const nt = Tasks.create({ board_id: b.id, title: 'Plain', description: 'short' });
+  Tasks.comment(nt.id, { author: a.id, body: 'a normal comment' });
+  assert.equal(Tasks.get(nt.id).comments[0].body, 'a normal comment', 'a normal comment is untouched');
+  assert.equal(Tasks.get(nt.id).comments[0].body_truncated, undefined, 'and unflagged');
+});
+
+test('the budget is spent ACROSS rows — not handed out in full to each one', () => {
+  // A surviving canary found this hole: I neutered the `spent` accumulator and every test still
+  // passed, because each of them had exactly ONE big row — and one big row is truncated to the
+  // budget whether or not the accumulator works. Without it, EVERY row gets the full budget and N
+  // big rows return N × it. The accumulator IS what makes a budget a budget, and nothing watched it.
+  const a = Agents.register({ name: 'across-probe', role: 'qa' });
+  const big = 'zz spread text '.repeat(20_000);   // ~300KB ≈ 75k tokens EACH
+
+  for (let i = 0; i < 4; i++) Messages.send({ from: a.id, to: a.id, body: big });
+
+  const inbox = Messages.inbox({ agent: a.id, max_tokens: 4000 });
+  const tokens = JSON.stringify(inbox).length / 4;
+  assert.ok(inbox.length >= 4, 'all four messages come back');
+  assert.ok(tokens <= 5000, `FOUR big rows share ONE budget — got ${Math.round(tokens)} tokens, not 4×`);
+});

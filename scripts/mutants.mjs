@@ -44,8 +44,8 @@ const CANARIES = [
   {
     why: 'READING an inbox must not CONSUME it — mark_read defaults to false on purpose',
     file: 'src/services.js',
-    find: '  inbox({ agent, unread_only = false, limit = 50, mark_read = false }) {',
-    into: '  inbox({ agent, unread_only = false, limit = 50, mark_read = true }) {',
+    find: '  inbox({ agent, unread_only = false, limit = 50, mark_read = false, max_tokens = INBOX_MAX_TOKENS }) {',
+    into: '  inbox({ agent, unread_only = false, limit = 50, mark_read = true, max_tokens = INBOX_MAX_TOKENS }) {',
   },
   {
     why: '...and the same, by the other route: `&&` here becomes "mark everything read, always"',
@@ -118,6 +118,18 @@ const CANARIES = [
     file: 'src/services.js',
     find: 'const TASK_MAX_TOKENS = 20_000;',
     into: 'const TASK_MAX_TOKENS = Infinity;',
+  },
+  {
+    why: 'A RECORD HAS MORE THAN ONE BODY — the shared budget bounds every reader; without it a comment or a message returns 413,000 tokens',
+    file: 'src/services.js',
+    find: '    if (full > room) {',
+    into: '    if (false) {',
+  },
+  {
+    why: 'the budget is spent ACROSS rows — without the accumulator, EVERY row gets the full budget and N big rows return N x it',
+    file: 'src/services.js',
+    find: '    spent += estTokens(r[field]);',
+    into: '    spent += 0;',
   },
 ];
 

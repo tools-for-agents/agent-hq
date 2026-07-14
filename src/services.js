@@ -37,6 +37,31 @@ const preview = (t) => {
 // The single-record read. Generous — a real description must never be clipped in the dashboard modal
 // — but not unbounded: kanban_get_task on a 1.2MB description handed a model ~300,000 tokens.
 const TASK_MAX_TOKENS = 20_000;
+const INBOX_MAX_TOKENS = 4000;
+
+// Spend a token budget across a list of rows, cutting the named field and SAYING SO. One helper,
+// because there are now four readers that need it and three hand-rolled copies is how they drift.
+//
+// 🔑 IT TAKES A LIST OF FIELDS BECAUSE MY OWN FIRST FIX WAS INCOMPLETE. I bounded a task's
+// `description` and left its COMMENT THREAD unbounded — a huge comment still returned 413,000 tokens
+// from kanban_get_task. A RECORD HAS MORE THAN ONE BODY, and I had only bounded the one I was looking
+// at. Bounding the field that happened to be big in your test is not bounding the record.
+function spendBudget(rows, field, max_tokens,
+  { spent = 0, flag = `${field}_truncated`, size = `${field}_tokens` } = {}) {
+  for (const r of rows) {
+    const v = String(r[field] || '');
+    const full = estTokens(v);
+    const room = Math.max(0, max_tokens - spent);
+    if (full > room) {
+      r[field] = v.slice(0, room * 4)
+        + `\n…[truncated at ${room} of ${full} tokens — raise max_tokens to read the rest]`;
+      r[flag] = true;
+      r[size] = full;
+    }
+    spent += estTokens(r[field]);
+  }
+  return spent;
+}
 // A user's search term or tag can contain LIKE metacharacters (`%`, `_`). Left raw they act as
 // wildcards — a `q` of 'node_modules' matches 'nodexmodules', a tag 'a_b' matches 'axb'. Escape
 // them (and the escape char) and pair every use with `ESCAPE '\'`.
@@ -293,15 +318,13 @@ export const Tasks = {
     t.comments = all(`SELECT * FROM comments WHERE task_id=? ORDER BY created_at`, id);
     t.deps = all(`SELECT depends_on FROM task_deps WHERE task_id=?`, id).map((r) => r.depends_on);
     // The record DOES carry the body — that is what a record is for — but not without a ceiling.
-    // A budget, not a wall: raise max_tokens and the rest comes back.
+    // A budget, not a wall: raise max_tokens and the rest comes back. The budget covers the
+    // description AND the comment thread: a record has more than one body, and bounding only the
+    // field that happened to be big in your test is not bounding the record (a huge COMMENT still
+    // returned 413,000 tokens after the description was capped).
     max_tokens = posInt(max_tokens, TASK_MAX_TOKENS, 1_000_000);
-    const d = String(t.description || '');
-    if (estTokens(d) > max_tokens) {
-      t.description_tokens = estTokens(d);
-      t.description_truncated = true;
-      t.description = d.slice(0, max_tokens * 4)
-        + `\n\n…[truncated at ${max_tokens} of ${t.description_tokens} tokens — raise max_tokens to read the rest]`;
-    }
+    const spent = spendBudget([t], 'description', max_tokens);
+    spendBudget(t.comments, 'body', max_tokens, { spent });
     return t;
   },
 
@@ -563,21 +586,10 @@ export const Memory = {
     // It has to be a BUDGET, not a cap: Memory has no get(), so search is the only way to read a
     // memory's content, and a hard truncation would make a long memory permanently unreadable.
     // Raise max_tokens and the whole thing comes back.
-    max_tokens = posInt(max_tokens, MEM_MAX_TOKENS, 1_000_000);
-    let spent = 0;
-    for (const m of rows) {
-      const content = String(m.content || '');
-      const full = estTokens(content);
-      const room = Math.max(0, max_tokens - spent);
-      if (full > room) {
-        // Never a silent cut, and never a dead end: say it was cut, how big it is, and what to do.
-        m.content = content.slice(0, room * 4)
-          + `\n…[truncated at ${room} of ${full} tokens — raise max_tokens to read the rest]`;
-        m.truncated = true;
-        m.full_tokens = full;
-      }
-      spent += estTokens(m.content);
-    }
+    // The same helper every other reader uses. A memory has ONE body, so its flags stay unprefixed
+    // (`truncated` / `full_tokens`) — the names already published on this tool.
+    spendBudget(rows, 'content', posInt(max_tokens, MEM_MAX_TOKENS, 1_000_000),
+      { flag: 'truncated', size: 'full_tokens' });
     return rows;
   },
 
@@ -606,7 +618,7 @@ export const Messages = {
 
   // Inbox = direct messages to me + broadcasts (not authored by me). Read state
   // is per-agent (message_reads), so broadcasts are unread until each agent reads.
-  inbox({ agent, unread_only = false, limit = 50, mark_read = false }) {
+  inbox({ agent, unread_only = false, limit = 50, mark_read = false, max_tokens = INBOX_MAX_TOKENS }) {
     if (!agent) throw new Error('agent required');
     let sql = `SELECT m.*, (r.agent_id IS NOT NULL) AS is_read
                FROM messages m
@@ -616,6 +628,8 @@ export const Messages = {
     if (unread_only) sql += ` AND r.agent_id IS NULL`;
     sql += ` ORDER BY m.created_at DESC LIMIT ?`; args.push(posInt(limit, 50, 200));
     const rows = all(sql, ...args).map((m) => ({ ...m, is_read: !!m.is_read }));
+    // A message body is as unbounded as a memory: one big one returned 413,000 tokens.
+    spendBudget(rows, 'body', posInt(max_tokens, INBOX_MAX_TOKENS, 1_000_000));
     if (mark_read && rows.length) {
       for (const m of rows) {
         run(`INSERT OR IGNORE INTO message_reads (message_id,agent_id,read_at) VALUES (?,?,?)`,
