@@ -8,11 +8,10 @@ import { dirname } from 'node:path';
 const DB_PATH = process.env.HQ_DB_PATH || './data/agenthq.db';
 mkdirSync(dirname(DB_PATH), { recursive: true });
 
-export const db = new DatabaseSync(DB_PATH);
-db.exec('PRAGMA journal_mode = WAL;');
-db.exec('PRAGMA foreign_keys = ON;');
+// Block this thread for `ms`. Opening the database is synchronous, so a retry has to be too.
+const sleepSync = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
-db.exec(`
+const SCHEMA = `
 CREATE TABLE IF NOT EXISTS agents (
   id            TEXT PRIMARY KEY,
   name          TEXT NOT NULL UNIQUE,
@@ -133,7 +132,37 @@ CREATE INDEX IF NOT EXISTS idx_tasks_col     ON tasks(column_id);
 CREATE INDEX IF NOT EXISTS idx_mem_agent     ON memories(agent_id);
 CREATE INDEX IF NOT EXISTS idx_activity_ts   ON activity(ts);
 CREATE INDEX IF NOT EXISTS idx_msg_to        ON messages(to_agent, read);
-`);
+`;
+
+// 🔑 WAL LETS READERS AND A WRITER COEXIST. IT DOES NOTHING FOR TWO WRITERS. Without busy_timeout the
+// second writer does not WAIT for the lock — it fails INSTANTLY with SQLITE_BUSY. HQ normally runs as
+// one server, but the MCP server, the CLI and a second container can all open this file; measured on
+// cortex (same store shape), two concurrent writers lost 45 of 60 writes. And busy_timeout does not
+// save the OPEN itself — `PRAGMA journal_mode = WAL` takes a brief exclusive lock and SQLite answers
+// SQLITE_BUSY for it immediately — so the open retries, and the schema goes up atomically.
+function openDb() {
+  for (let attempt = 0; ; attempt++) {
+    let d;
+    try {
+      d = new DatabaseSync(DB_PATH);
+      d.exec('PRAGMA busy_timeout = 5000;');
+      d.exec('PRAGMA journal_mode = WAL;');
+      d.exec('PRAGMA foreign_keys = ON;');
+      d.exec('BEGIN IMMEDIATE;');
+      d.exec(SCHEMA);
+      d.exec('COMMIT;');
+      return d;
+    } catch (e) {
+      try { d?.close(); } catch { /* already gone */ }
+      // Only a lock is worth retrying — a loop that hides a real fault is worse than the fault.
+      if (attempt >= 40 || !/lock|busy/i.test(e.message)) throw e;
+      sleepSync(25);
+    }
+  }
+}
+
+export const db = openDb();
+
 
 // Lightweight migration: add columns introduced after first release.
 function ensureColumn(table, col, decl) {
