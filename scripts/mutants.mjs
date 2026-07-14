@@ -56,8 +56,8 @@ const CANARIES = [
   {
     why: 'memory_search must FILTER — without the q clause it hands back the whole team memory and calls it a search',
     file: 'src/services.js',
-    find: '    if (q) { sql += ` AND (title LIKE ? OR content LIKE ?)`; args.push(`%${q}%`, `%${q}%`); }',
-    into: '    if (false) { sql += ` AND (title LIKE ? OR content LIKE ?)`; args.push(`%${q}%`, `%${q}%`); }',
+    find: "    if (q) { const p = `%${likeEsc(q)}%`; sql += ` AND (title LIKE ? ESCAPE '\\\\' OR content LIKE ? ESCAPE '\\\\')`; args.push(p, p); }",
+    into: "    if (false) { const p = `%${likeEsc(q)}%`; sql += ` AND (title LIKE ? ESCAPE '\\\\' OR content LIKE ? ESCAPE '\\\\')`; args.push(p, p); }",
   },
   {
     why: 'the median cycle time must ADD the middle pair, not subtract it — a wrong number dressed as a measurement',
