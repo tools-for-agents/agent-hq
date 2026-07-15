@@ -311,6 +311,18 @@ function columnByName(board_id, name) {
   return get(`SELECT * FROM columns WHERE board_id=? AND lower(name)=lower(?)`, board_id, name);
 }
 
+// priority is a FINITE, KNOWN set (the DB comments it, the MCP schema declares it as an enum) — but
+// the schema only guards the MCP path. The HTTP API (POST /api/tasks) and any direct caller go straight
+// to Tasks.create/update, so an out-of-enum value like "CRITICAL" was stored verbatim: wrong data written
+// confidently, and the priority-sort CASE doesn't know it, so a "critical" task sorts BELOW low. Enforce
+// it at the one choke point every path shares, and name the values that exist.
+const PRIORITIES = ['low', 'medium', 'high', 'urgent'];
+const assertPriority = (p) => {
+  if (p != null && !PRIORITIES.includes(p)) {
+    throw new Error(`priority "${p}" is not one of ${PRIORITIES.join(', ')} — the task was not saved.`);
+  }
+};
+
 export const Tasks = {
   get(id, { max_tokens = TASK_MAX_TOKENS } = {}) {
     const t = parse(get(`SELECT * FROM tasks WHERE id=?`, id), 'labels');
@@ -364,6 +376,7 @@ export const Tasks = {
   },
 
   create({ board_id, column, title, description = '', assignee = null, priority = 'medium', labels = [], created_by = null, force = false }) {
+    assertPriority(priority);
     const board = board_id ? get(`SELECT * FROM boards WHERE id=?`, board_id) : Boards.ensureDefault();
     const bid = board.id;
     // Asking for a column that does not exist used to drop the task quietly into the FIRST
@@ -394,6 +407,7 @@ export const Tasks = {
   update(id, patch, actor = null) {
     const t = get(`SELECT * FROM tasks WHERE id=?`, id);
     if (!t) throw new Error('task not found');
+    assertPriority(patch.priority);   // undefined (not patched) is fine; a bad value is not
     const fields = { title: t.title, description: t.description, assignee: t.assignee, priority: t.priority };
     let columnChange = null, moveData = null;
 

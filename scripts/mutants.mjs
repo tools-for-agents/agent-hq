@@ -24,6 +24,12 @@ import { spawnSync } from 'node:child_process';
 
 const CANARIES = [
   {
+    why: 'a task priority outside the enum ("CRITICAL") is WRONG DATA written confidently — the MCP schema guards its own path, but the HTTP API and direct callers write it verbatim, and the priority sort buries it below "low"',
+    file: 'src/services.js',
+    find: '  if (p != null && !PRIORITIES.includes(p)) {',
+    into: '  if (false) {',
+  },
+  {
     why: 'the reaper must not sweep the LIVING — a plus here offlines an agent that just heartbeated',
     file: 'src/services.js',
     find: '    const cutoff = new Date(Date.now() - threshold_ms).toISOString();',

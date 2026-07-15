@@ -29,6 +29,29 @@ test('a dependency blocks kanban_next until the blocker reaches Done', () => {
   assert.equal(Tasks.next('w2', { board_id: bid }).task.title, 'A', 'A unblocks once B is Done');
 });
 
+// priority is a finite enum. The MCP schema declares it, but the HTTP API and any direct caller go
+// straight to Tasks.create/update — so "CRITICAL" was stored verbatim (and the priority sort, which
+// only knows low/medium/high/urgent, buried it below "low"). Enforce it in the core, every path.
+test('a task priority outside the enum is refused — in create AND update', () => {
+  const bid = newBoard();
+  assert.throws(() => Tasks.create({ board_id: bid, column: 'Todo', title: 'Bad', priority: 'CRITICAL' }),
+    (e) => {
+      assert.match(e.message, /priority "CRITICAL" is not one of/, 'it names the bad priority');
+      assert.match(e.message, /low, medium, high, urgent/, 'and lists the valid ones');
+      return true;
+    });
+  // Over-fire guards: every valid priority works, omitting it defaults, and update is guarded too.
+  for (const p of ['low', 'medium', 'high', 'urgent']) {
+    assert.equal(Tasks.create({ board_id: bid, column: 'Todo', title: `ok-${p}`, priority: p }).priority, p);
+  }
+  assert.equal(Tasks.create({ board_id: bid, column: 'Todo', title: 'def' }).priority, 'medium', 'omitting priority defaults, not errors');
+  const t = Tasks.create({ board_id: bid, column: 'Todo', title: 'movable', priority: 'low' });
+  assert.throws(() => Tasks.update(t.id, { priority: 'CRITICAL' }), /not one of/, 'update refuses a bad priority too');
+  assert.doesNotThrow(() => Tasks.update(t.id, { title: 'renamed' }), 'an update that does not touch priority is fine');
+  Tasks.update(t.id, { priority: 'urgent' });
+  assert.equal(Tasks.get(t.id).priority, 'urgent', 'and a valid priority update sticks');
+});
+
 test('addDep rejects a circular dependency', () => {
   const bid = newBoard();
   const x = Tasks.create({ board_id: bid, column: 'Todo', title: 'X' });
