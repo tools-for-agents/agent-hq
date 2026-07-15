@@ -67,6 +67,21 @@ test('task labels must be an array — a bare string is refused, not spread into
   assert.doesNotThrow(() => Tasks.update(t.id, { title: 'renamed' }), 'an update that does not touch labels is fine');
 });
 
+// The kit's remaining declared enums, enforced in the core (the MCP schema only guards the MCP path):
+// an agent status the reaper/dashboard don't understand, or a run status the ledger buckets as neither.
+test('agent status and run status are enforced against their enums, every path', () => {
+  const a = Agents.register({ name: 'St' });
+  assert.throws(() => Agents.update(a.id, { status: 'busy' }), /agent status "busy" is not one of idle, working, offline/, 'a bogus agent status is refused');
+  assert.doesNotThrow(() => Agents.update(a.id, { status: 'working' }), 'a valid agent status works');
+  assert.doesNotThrow(() => Agents.update(a.id, { role: 'dev' }), 'an update with no status is untouched');
+
+  const r = Ledger.start({ agent_id: a.id, label: 'x' });
+  assert.throws(() => Ledger.end(r.id, { status: 'cancelled' }), /run status "cancelled" is not one of done, error/, 'ending a run with a bogus status is refused');
+  assert.doesNotThrow(() => Ledger.end(r.id, { status: 'error' }), 'a valid run status works');
+  assert.throws(() => Ledger.record({ label: 'y', status: 'weird' }), /run status "weird"/, 'recording a run with a bogus status is refused');
+  assert.doesNotThrow(() => Ledger.record({ label: 'z' }), 'the default run status (done) is fine');
+});
+
 test('addDep rejects a circular dependency', () => {
   const bid = newBoard();
   const x = Tasks.create({ board_id: bid, column: 'Todo', title: 'X' });

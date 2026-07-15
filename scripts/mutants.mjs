@@ -36,6 +36,12 @@ const CANARIES = [
     into: '  if (false) {',
   },
   {
+    why: 'the remaining declared enums (agent status idle/working/offline, run status done/error) are enforced in the CORE — the MCP schema only guards the MCP path, so the HTTP API could store a status the reaper and ledger do not understand',
+    file: 'src/services.js',
+    find: '  if (val != null && !set.includes(val)) {',
+    into: '  if (false) {',
+  },
+  {
     why: 'the reaper must not sweep the LIVING — a plus here offlines an agent that just heartbeated',
     file: 'src/services.js',
     find: '    const cutoff = new Date(Date.now() - threshold_ms).toISOString();',

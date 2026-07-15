@@ -99,6 +99,7 @@ export const Agents = {
   update(id, patch) {
     const a = Agents.get(id);
     if (!a) throw new Error('agent not found');
+    assertEnum('agent status', patch.status, AGENT_STATUSES);
     const status = patch.status ?? a.status;
     const role = patch.role ?? a.role;
     const current_task = patch.current_task !== undefined ? patch.current_task : a.current_task;
@@ -329,6 +330,16 @@ const assertPriority = (p) => {
 const assertLabels = (l) => {
   if (l != null && !Array.isArray(l)) {
     throw new Error(`labels must be an array of strings, not a ${typeof l} ("${l}") — the task was not saved.`);
+  }
+};
+// The kit's other declared enums, enforced at the core so the HTTP API and direct callers can't slip a
+// value past the MCP schema: an agent "status" that the reaper and the dashboard don't understand, or a
+// run "status" the ledger buckets as neither done nor error.
+const AGENT_STATUSES = ['idle', 'working', 'offline'];
+const RUN_STATUSES = ['done', 'error'];
+const assertEnum = (label, val, set) => {
+  if (val != null && !set.includes(val)) {
+    throw new Error(`${label} "${val}" is not one of ${set.join(', ')}.`);
   }
 };
 
@@ -722,6 +733,7 @@ export const Ledger = {
   },
 
   end(id, { input_tokens = 0, output_tokens = 0, status = 'done', cost_usd, model } = {}) {
+    assertEnum('run status', status, RUN_STATUSES);
     const r = get(`SELECT * FROM runs WHERE id=?`, id);
     if (!r) throw new Error('run not found');
     const useModel = model || r.model;
@@ -739,6 +751,7 @@ export const Ledger = {
   // One-shot: log an already-completed run.
   record({ agent_id = null, task_id = null, label = 'run', model = null,
     input_tokens = 0, output_tokens = 0, cost_usd, duration_ms = 0, status = 'done', meta = null }) {
+    assertEnum('run status', status, RUN_STATUSES);
     const id = uid('run_');
     const cost = cost_usd != null ? cost_usd : costOf(model, input_tokens, output_tokens);
     const ts = now();
