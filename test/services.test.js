@@ -52,6 +52,21 @@ test('a task priority outside the enum is refused — in create AND update', () 
   assert.equal(Tasks.get(t.id).priority, 'urgent', 'and a valid priority update sticks');
 });
 
+// labels is an ARRAY. A bare string reaches the core via the HTTP API, JSON.stringify stores it, and a
+// consumer spreads it — so one label "urgent" becomes six: u, r, g, e, n, t. A string is not a list.
+test('task labels must be an array — a bare string is refused, not spread into letters', () => {
+  const bid = newBoard();
+  assert.throws(() => Tasks.create({ board_id: bid, column: 'Todo', title: 'Bad', labels: 'urgent' }),
+    /labels must be an array/, 'a string label is refused');
+  // Over-fire guards: a real array works, omitting labels defaults to [], and update is guarded too.
+  assert.deepEqual(Tasks.create({ board_id: bid, column: 'Todo', title: 'ok', labels: ['urgent', 'bug'] }).labels,
+    ['urgent', 'bug'], 'a proper array is kept intact');
+  assert.deepEqual(Tasks.create({ board_id: bid, column: 'Todo', title: 'def' }).labels, [], 'omitting labels defaults to []');
+  const t = Tasks.create({ board_id: bid, column: 'Todo', title: 't', labels: ['x'] });
+  assert.throws(() => Tasks.update(t.id, { labels: 'oops' }), /labels must be an array/, 'update refuses a string label too');
+  assert.doesNotThrow(() => Tasks.update(t.id, { title: 'renamed' }), 'an update that does not touch labels is fine');
+});
+
 test('addDep rejects a circular dependency', () => {
   const bid = newBoard();
   const x = Tasks.create({ board_id: bid, column: 'Todo', title: 'X' });

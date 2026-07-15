@@ -30,6 +30,12 @@ const CANARIES = [
     into: '  if (false) {',
   },
   {
+    why: 'task labels must be an ARRAY — accept a bare string and JSON.stringify stores it, then a consumer spreads one label "urgent" into six letters u,r,g,e,n,t',
+    file: 'src/services.js',
+    find: '  if (l != null && !Array.isArray(l)) {',
+    into: '  if (false) {',
+  },
+  {
     why: 'the reaper must not sweep the LIVING — a plus here offlines an agent that just heartbeated',
     file: 'src/services.js',
     find: '    const cutoff = new Date(Date.now() - threshold_ms).toISOString();',

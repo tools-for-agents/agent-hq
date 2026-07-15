@@ -322,6 +322,15 @@ const assertPriority = (p) => {
     throw new Error(`priority "${p}" is not one of ${PRIORITIES.join(', ')} — the task was not saved.`);
   }
 };
+// labels is an ARRAY of strings (the MCP schema says so). But the schema only guards the MCP path; the
+// HTTP API and direct callers reach create/update with whatever they pass, and `JSON.stringify("urgent")`
+// happily stores the STRING "urgent" as if it were the labels — then a consumer spreads it and the one
+// label becomes six: u, r, g, e, n, t. A string is not a one-element list; refuse it.
+const assertLabels = (l) => {
+  if (l != null && !Array.isArray(l)) {
+    throw new Error(`labels must be an array of strings, not a ${typeof l} ("${l}") — the task was not saved.`);
+  }
+};
 
 export const Tasks = {
   get(id, { max_tokens = TASK_MAX_TOKENS } = {}) {
@@ -377,6 +386,7 @@ export const Tasks = {
 
   create({ board_id, column, title, description = '', assignee = null, priority = 'medium', labels = [], created_by = null, force = false }) {
     assertPriority(priority);
+    assertLabels(labels);
     const board = board_id ? get(`SELECT * FROM boards WHERE id=?`, board_id) : Boards.ensureDefault();
     const bid = board.id;
     // Asking for a column that does not exist used to drop the task quietly into the FIRST
@@ -408,6 +418,7 @@ export const Tasks = {
     const t = get(`SELECT * FROM tasks WHERE id=?`, id);
     if (!t) throw new Error('task not found');
     assertPriority(patch.priority);   // undefined (not patched) is fine; a bad value is not
+    assertLabels(patch.labels);
     const fields = { title: t.title, description: t.description, assignee: t.assignee, priority: t.priority };
     let columnChange = null, moveData = null;
 
