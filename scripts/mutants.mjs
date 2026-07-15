@@ -104,8 +104,8 @@ const CANARIES = [
   {
     why: 'a run with tokens but no cost must be PRICED, not zeroed — every auto-priced run else charges $0',
     file: 'src/services.js',
-    find: '    const cost = cost_usd != null ? cost_usd : costOf(model, input_tokens, output_tokens);',
-    into: '    const cost = cost_usd != null ? cost_usd : 0;',
+    find: '    const cost = usableCost(cost_usd) ?? costOf(model, input_tokens, output_tokens);',
+    into: '    const cost = usableCost(cost_usd) ?? 0;',
   },
   {
     why: 'cost = input×inRate PLUS output×outRate — a minus there silently under-bills every run',
@@ -154,6 +154,18 @@ const CANARIES = [
     file: 'src/services.js',
     find: '    const lease = posInt(lease_ms, 600_000, MAX_LEASE_MS);',
     into: '    const lease = lease_ms;',
+  },
+  {
+    why: 'ledger token counts must be non-negative ints — the ledger SUMs them, so a NEGATIVE count stores a negative cost (silent under-bill of the company) and a NaN/string hits a raw "NOT NULL constraint failed: runs.cost_usd"; the HTTP route passes them past the MCP schema',
+    file: 'src/services.js',
+    find: 'const tokenCount = (v) => (Number.isFinite(+v) && +v >= 0 ? Math.floor(+v) : 0);',
+    into: 'const tokenCount = (v) => +v;',
+  },
+  {
+    why: 'an explicit cost_usd must be a usable non-negative number or we price from tokens — raw, a negative poisons the company total and a string crashes on `cost.toFixed`',
+    file: 'src/services.js',
+    find: 'const usableCost = (v) => (v != null && Number.isFinite(+v) && +v >= 0 ? +v : null);',
+    into: 'const usableCost = (v) => (v != null ? v : null);',
   },
 ];
 

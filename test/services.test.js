@@ -82,6 +82,28 @@ test('agent status and run status are enforced against their enums, every path',
   assert.doesNotThrow(() => Ledger.record({ label: 'z' }), 'the default run status (done) is fine');
 });
 
+test('the cost ledger refuses numbers that would poison the company total', () => {
+  // The ledger SUMs tokens and cost across every run. Unvalidated, a negative token count stored a
+  // NEGATIVE cost (silent under-bill); a NaN/string hit a raw "NOT NULL constraint failed: runs.cost_usd";
+  // a bad explicit cost_usd stored garbage or crashed on `cost.toFixed`. The HTTP route passes these
+  // straight through, past the MCP schema.
+  const neg = Ledger.record({ label: 'neg', model: 'opus', input_tokens: -1000000, output_tokens: 0 });
+  assert.equal(neg.input_tokens, 0, 'a negative token count floors to 0');
+  assert.ok(neg.cost_usd >= 0, 'and never yields a negative cost');
+  const str = Ledger.record({ label: 'str', model: 'opus', input_tokens: 'abc', output_tokens: NaN });
+  assert.equal(str.input_tokens, 0, 'a non-numeric token count is 0, not a constraint crash');
+  assert.equal(str.output_tokens, 0);
+  const badCost = Ledger.record({ label: 'badcost', model: 'opus', input_tokens: 10, output_tokens: 10, cost_usd: 'x' });
+  assert.ok(Number.isFinite(badCost.cost_usd) && badCost.cost_usd >= 0, "a non-numeric cost_usd is priced from tokens, not a toFixed crash");
+  const negCost = Ledger.record({ label: 'negcost', model: 'opus', input_tokens: 10, output_tokens: 10, cost_usd: -5 });
+  assert.ok(negCost.cost_usd >= 0, 'a negative explicit cost_usd is dropped for the token price');
+  const zeroCost = Ledger.record({ label: 'zerocost', model: 'opus', input_tokens: 10, output_tokens: 10, cost_usd: 0 });
+  assert.equal(zeroCost.cost_usd, 0, 'a legitimate cost of exactly 0 is preserved (?? not ||)');
+  // The integrity property: whatever anyone records, the company total stays finite and non-negative.
+  const total = Ledger.summary().total_cost_usd;
+  assert.ok(Number.isFinite(total) && total >= 0, 'the company cost total is never NaN or negative');
+});
+
 test('addDep rejects a circular dependency', () => {
   const bid = newBoard();
   const x = Tasks.create({ board_id: bid, column: 'Todo', title: 'X' });

@@ -20,6 +20,15 @@ const posInt = (v, def, cap = 500) => (Number.isFinite(+v) && +v > 0 ? Math.min(
 // ('?lease_ms=abc'), Infinity, or an astronomically large number. Capped at a year: a task auto-locked
 // longer than that is a mistake, not a lease.
 const MAX_LEASE_MS = 365 * 24 * 60 * 60 * 1000;   // 1 year
+// The cost ledger SUMs tokens and cost across EVERY run, so one bad number poisons the company total.
+// Token counts must be non-negative integers — 0 is VALID (a run can emit no output), so this is NOT
+// posInt (which rejects 0). Unguarded, a negative count silently under-bills the company, and a NaN or a
+// string hit a raw "NOT NULL constraint failed: runs.cost_usd" (naming an internal column, not the real
+// problem) or crash on `cost.toFixed`. The HTTP route passes these straight through, past the MCP schema.
+const tokenCount = (v) => (Number.isFinite(+v) && +v >= 0 ? Math.floor(+v) : 0);
+// An explicit cost_usd is honoured only if it is a usable non-negative number; otherwise we PRICE from the
+// (now-clean) tokens rather than store garbage. `?? ` not `||`, so a legitimate cost of exactly 0 stands.
+const usableCost = (v) => (v != null && Number.isFinite(+v) && +v >= 0 ? +v : null);
 // ≈4 chars/token — the same estimate every other tool in this kit uses, so the budgets mean the
 // same thing across them.
 const estTokens = (s) => Math.ceil(String(s || '').length / 4);
@@ -746,8 +755,10 @@ export const Ledger = {
     assertEnum('run status', status, RUN_STATUSES);
     const r = get(`SELECT * FROM runs WHERE id=?`, id);
     if (!r) throw new Error('run not found');
+    input_tokens = tokenCount(input_tokens);
+    output_tokens = tokenCount(output_tokens);
     const useModel = model || r.model;
-    const cost = cost_usd != null ? cost_usd : costOf(useModel, input_tokens, output_tokens);
+    const cost = usableCost(cost_usd) ?? costOf(useModel, input_tokens, output_tokens);
     const dur = Date.now() - new Date(r.started_at).getTime();
     run(`UPDATE runs SET status=?, input_tokens=?, output_tokens=?, cost_usd=?, model=?, ended_at=?, duration_ms=? WHERE id=?`,
       status, input_tokens, output_tokens, cost, useModel, now(), dur, id);
@@ -763,7 +774,9 @@ export const Ledger = {
     input_tokens = 0, output_tokens = 0, cost_usd, duration_ms = 0, status = 'done', meta = null }) {
     assertEnum('run status', status, RUN_STATUSES);
     const id = uid('run_');
-    const cost = cost_usd != null ? cost_usd : costOf(model, input_tokens, output_tokens);
+    input_tokens = tokenCount(input_tokens);
+    output_tokens = tokenCount(output_tokens);
+    const cost = usableCost(cost_usd) ?? costOf(model, input_tokens, output_tokens);
     const ts = now();
     run(`INSERT INTO runs (id,agent_id,task_id,label,model,status,input_tokens,output_tokens,cost_usd,started_at,ended_at,duration_ms,meta)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
