@@ -661,6 +661,18 @@ export const Memory = {
 export const Messages = {
   send({ from_agent = null, to_agent = null, task_id = null, body }) {
     if (!body) throw new Error('body required');
+    // Resolve the recipient to a canonical agent id. to_agent may arrive as an id OR a name — Agents.get
+    // accepts both, and the activity summary below ALREADY resolves it for DISPLAY. But the row stored the
+    // raw value while inbox() matches m.to_agent against the reader's ID, so a message addressed by NAME
+    // was written, shown in the feed as "→ bob" (delivered!), and never reached bob's inbox — silently
+    // lost, in the one tool whose job is agents coordinating. And a recipient that resolves to nobody is a
+    // typo, not a message to send into the void. null stays null: that is a broadcast to everyone.
+    if (to_agent != null) {
+      const rcpt = Agents.get(to_agent);
+      if (!rcpt) throw new Error(`no such agent: "${to_agent}" — message not sent. `
+        + `Pass a registered agent id or name, or omit to_agent to broadcast to everyone.`);
+      to_agent = rcpt.id;
+    }
     const id = uid('msg_');
     run(`INSERT INTO messages (id,from_agent,to_agent,task_id,body,read,created_at)
          VALUES (?,?,?,?,?,0,?)`, id, from_agent, to_agent, task_id, body, now());

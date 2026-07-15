@@ -167,6 +167,12 @@ const CANARIES = [
     find: 'const usableCost = (v) => (v != null && Number.isFinite(+v) && +v >= 0 ? +v : null);',
     into: 'const usableCost = (v) => (v != null ? v : null);',
   },
+  {
+    why: 'a message recipient must be RESOLVED to a canonical agent id — inbox matches m.to_agent against the reader\'s id, so a message addressed by NAME (which the feed shows as delivered) was stored raw and never reached the inbox, silently lost in the one tool whose job is agents coordinating',
+    file: 'src/services.js',
+    find: '      to_agent = rcpt.id;',
+    into: '      void rcpt;',
+  },
 ];
 
 // spawnSync returns status:null when IT kills the child for exceeding the timeout — a TIMEOUT,

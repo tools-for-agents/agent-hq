@@ -309,6 +309,22 @@ test('messages: compose send posts a directed message, and a null recipient is a
   assert.throws(() => Messages.send({ from_agent: gus.id, body: '' }), /body required/);
 });
 
+test('messages: a recipient addressed by NAME is delivered (not silently lost), a nonexistent one refused', () => {
+  const ann = Agents.register({ name: 'Ann-msg', role: 'r', avatar: '🅰️' });
+  const ben = Agents.register({ name: 'Ben-msg', role: 'r', avatar: '🅱️' });
+  // to_agent may be an id OR a name (Agents.get accepts both, and the activity feed already resolves it for
+  // display) — but send stored the RAW value while inbox matches on the reader's id, so a name-addressed
+  // message was shown as delivered and never reached the inbox. It must resolve to the canonical id.
+  const byName = Messages.send({ from_agent: ann.id, to_agent: 'Ben-msg', body: 'ping by name' });
+  assert.equal(byName.to_agent, ben.id, 'the recipient name is resolved to the canonical agent id');
+  assert.ok(Messages.inbox({ agent: ben.id }).some((m) => m.id === byName.id), 'and the message actually reaches the inbox');
+  // a recipient that resolves to nobody is a typo, not a message to send into the void
+  assert.throws(() => Messages.send({ from_agent: ann.id, to_agent: 'nobody-here', body: 'x' }),
+    /no such agent/, 'a nonexistent recipient is refused, not silently stored undeliverable');
+  // and a broadcast (null recipient) is untouched
+  assert.equal(Messages.send({ from_agent: ann.id, to_agent: null, body: 'all' }).to_agent, null, 'a null recipient is still a broadcast');
+});
+
 test('ledger: summary exposes a chronological spend series (drives the sparkline)', () => {
   const gil = Agents.register({ name: 'Gil-ledger', role: 'r', avatar: '💠' });
   Ledger.record({ agent_id: gil.id, label: 'plan', model: 'claude-haiku-4-5-20251001', input_tokens: 100, output_tokens: 50, cost_usd: 0.01 });
