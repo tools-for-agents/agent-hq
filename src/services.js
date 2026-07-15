@@ -904,9 +904,13 @@ export const Graph = {
     const seen = new Set();
     const addNode = (n) => { if (!seen.has(n.id)) { seen.add(n.id); nodes.push(n); } };
 
-    const nsCount = {};
-    const tagCount = {};
-    const agentMemN = {};
+    // Object.create(null): nsCount/tagCount are keyed by USER-CHOSEN namespace and tag names. A plain {}
+    // inherits Object.prototype, so a namespace or tag literally named "constructor"/"toString"/"valueOf"
+    // read that inherited FUNCTION as its starting count — `(fn || 0) + 1` → "function Object() {…}1" — and
+    // the graph node came back sized by a garbage string. A prototype-less object has no keys to collide with.
+    const nsCount = Object.create(null);
+    const tagCount = Object.create(null);
+    const agentMemN = Object.create(null);
 
     for (const m of memories) {
       const snippet = (m.content || '').replace(/\s+/g, ' ').trim().slice(0, 160);

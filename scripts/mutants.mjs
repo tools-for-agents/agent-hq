@@ -185,6 +185,12 @@ const CANARIES = [
     find: '      // not exist is a mistake, and the two must not look the same.\n      if (!col) {',
     into: '      // not exist is a mistake, and the two must not look the same.\n      if (false) {',
   },
+  {
+    why: 'company_graph counters are prototype-less (Object.create(null)) — keyed by USER-CHOSEN namespace/tag names, a plain {} let a namespace/tag named "constructor"/"toString" read the inherited FUNCTION as its count, so the node came back sized by a garbage string instead of a number',
+    file: 'src/services.js',
+    find: '    const nsCount = Object.create(null);',
+    into: '    const nsCount = {};',
+  },
 ];
 
 // spawnSync returns status:null when IT kills the child for exceeding the timeout — a TIMEOUT,

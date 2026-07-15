@@ -255,6 +255,22 @@ test('graph: memories link to their namespace, tags, and author', () => {
   assert.ok(s.top_authors.some((a) => a.agent === 'Cartographer'), 'digest lists the author');
 });
 
+test('graph: a namespace/tag named for an Object.prototype member is counted, not sized by a function', () => {
+  Memory.write({ title: 'Proto mem A', content: 'x', namespace: 'constructor', tags: ['toString', 'valueOf'] });
+  Memory.write({ title: 'Proto mem B', content: 'y', namespace: 'constructor', tags: ['toString'] });
+  const g = Graph.build();
+  const node = (id) => g.nodes.find((n) => n.id === id);
+  // nsCount/tagCount were plain {} keyed by user-chosen names, so a namespace/tag "constructor"/"toString"
+  // read the inherited FUNCTION as its starting count → `(fn || 0) + 1` → "function Object() {…}1", and the
+  // node came back sized by a garbage string.
+  const ns = node('ns:constructor');
+  assert.equal(typeof ns.count, 'number', 'the "constructor" namespace count is a number, not function source');
+  assert.equal(ns.count, 2, 'and it correctly counts its two memories');
+  const tag = node('tag:toString');
+  assert.equal(typeof tag.count, 'number');
+  assert.equal(tag.count, 2, 'the "toString" tag counts both memories');
+});
+
 test('activity: recent can filter to one agent\'s timeline', () => {
   const alfa = Agents.register({ name: 'Alfa-timeline', role: 'r', avatar: '🅰️' });
   const beta = Agents.register({ name: 'Beta-timeline', role: 'r', avatar: '🅱️' });
