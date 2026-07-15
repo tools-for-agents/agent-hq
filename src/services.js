@@ -456,8 +456,17 @@ export const Tasks = {
     let columnChange = null, moveData = null;
 
     if (patch.column || patch.status) {
-      const col = columnByName(t.board_id, patch.column || patch.status);
-      if (col && col.id !== t.column_id) {
+      const target = patch.column || patch.status;
+      const col = columnByName(t.board_id, target);
+      // A misspelled column must NOT silently no-op. create() already rejects one, and the MOVE is exactly
+      // where "I put it in Done" and "it never moved" diverge: the agent is told the update worked (no error,
+      // the task comes back) while the task sat still. Omitting the column is a choice; naming one that does
+      // not exist is a mistake, and the two must not look the same.
+      if (!col) {
+        const known = all(`SELECT name FROM columns WHERE board_id=? ORDER BY position`, t.board_id).map((r) => r.name);
+        throw new Error(`no column named "${target}" — the task was NOT moved. The columns are: ${known.join(', ')}`);
+      }
+      if (col.id !== t.column_id) {
         assertWip(col, patch.force);        // moving INTO a full column is the case WIP limits exist to stop
         const pos = (get(`SELECT COALESCE(MAX(position),0)+1 AS p FROM tasks WHERE column_id=?`, col.id)).p;
         const from = get(`SELECT name FROM columns WHERE id=?`, t.column_id);

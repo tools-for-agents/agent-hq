@@ -179,6 +179,12 @@ const CANARIES = [
     find: 'const agentId = (v) => (v == null ? v : (Agents.get(v)?.id ?? v));',
     into: 'const agentId = (v) => v;',
   },
+  {
+    why: 'moving a task to a MISSPELLED column must be REFUSED, not silently ignored — create() rejects a bad column, but the move dropped it on the floor: the task stayed put, no error, the agent told "Done" while it never moved. This guard is where a typo and a real move diverge.',
+    file: 'src/services.js',
+    find: '      // not exist is a mistake, and the two must not look the same.\n      if (!col) {',
+    into: '      // not exist is a mistake, and the two must not look the same.\n      if (false) {',
+  },
 ];
 
 // spawnSync returns status:null when IT kills the child for exceeding the timeout — a TIMEOUT,

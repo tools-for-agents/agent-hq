@@ -381,6 +381,21 @@ test('list/summary functions coerce a bad limit/top — closes the input-robustn
   assert.ok(Messages.recent(1).length <= 1, 'a valid small limit is respected');
 });
 
+test('moving a task to a MISSPELLED column is refused, not silently ignored', () => {
+  const bid = newBoard();
+  const t = Tasks.create({ board_id: bid, column: 'Todo', title: 'x' });
+  const colOf = (id) => Tasks.list({ board_id: bid }).find((tt) => tt.id === id).column_name;
+  // create() rejects a bogus column; the MOVE must too. Otherwise "put it in Done" silently no-ops and the
+  // agent is handed the task back (no error) believing the update worked, while it never left its column.
+  assert.throws(() => Tasks.update(t.id, { column: 'Dun' }), /no column named "Dun".*NOT moved/, 'a misspelled column is named, not silently ignored');
+  assert.equal(colOf(t.id), 'Todo', 'and the task did not move');
+  // a real move still lands; a same-column update and a field-only update are clean no-ops
+  Tasks.update(t.id, { column: 'Done' });
+  assert.equal(colOf(t.id), 'Done', 'a valid column move lands');
+  assert.doesNotThrow(() => Tasks.update(t.id, { column: 'Done' }), 'moving to the column it is already in is fine');
+  assert.doesNotThrow(() => Tasks.update(t.id, { title: 'renamed' }), 'a field-only update needs no column');
+});
+
 test('a WIP limit stops a column taking on more work than it can finish', () => {
   const bid = newBoard();
   const t1 = Tasks.create({ board_id: bid, column: 'Todo', title: 'one' });
