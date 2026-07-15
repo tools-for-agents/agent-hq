@@ -128,6 +128,30 @@ test('claiming a task is atomic — a second claimant is refused', () => {
   assert.equal(second.ok, false);
 });
 
+test('a bad lease_ms defaults instead of crashing claim/next with "Invalid time value"', () => {
+  const bid = newBoard();
+  const t = Tasks.create({ board_id: bid, column: 'Todo', title: 'Lease' });
+  // lease_ms arrives from a query param / JSON body / direct caller — the HTTP route passes body.lease_ms
+  // straight through, and the MCP schema's `type:integer` guards only the MCP path. Unvalidated, a NaN
+  // ('?lease_ms=abc'), Infinity, or an astronomically large value pushed `Date.now() + lease` outside the
+  // valid Date range, and `.toISOString()` threw "RangeError: Invalid time value" on claim() — the throw
+  // then propagated through next(), the two calls an agent makes most.
+  for (const bad of [NaN, Infinity, 'abc', 1e19]) {
+    const r = Tasks.claim(t.id, 'agent-A', bad);          // before the fix this LINE threw, not returned
+    assert.equal(r.ok, true, `lease_ms=${bad} still claims`);
+    assert.ok(!Number.isNaN(new Date(r.task.lease_until).getTime()),
+      `lease_ms=${bad} yields a valid lease_until, not an Invalid Date`);
+    Tasks.release(t.id, 'agent-A');
+  }
+  // Over/under-fire guards: a legit small lease keeps the 30s floor; a giant one is capped, not overflowed.
+  const small = Tasks.claim(t.id, 'agent-A', 5000);
+  assert.ok(new Date(small.task.lease_until) - Date.now() >= 29_000, 'a small lease is floored to ~30s, not defaulted away');
+  Tasks.release(t.id, 'agent-A');
+  const huge = Tasks.claim(t.id, 'agent-A', 1e19);
+  const year = 365 * 24 * 60 * 60 * 1000;
+  assert.ok(new Date(huge.task.lease_until) - Date.now() <= year + 60_000, 'a giant lease is capped at ~1 year');
+});
+
 test('memory: write then search finds it — AND EXCLUDES WHAT DOES NOT MATCH', () => {
   Memory.write({ title: 'Token rotation', content: 'JWTs rotate every 15 minutes', importance: 5, tags: ['auth'] });
   Memory.write({ title: 'Lunch order', content: 'nobody wants the anchovies', importance: 1 });

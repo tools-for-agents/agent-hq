@@ -149,6 +149,12 @@ const CANARIES = [
     find: '    spent += estTokens(r[field]);',
     into: '    spent += 0;',
   },
+  {
+    why: 'lease_ms must be COERCED before Date arithmetic — the MCP schema types it, but the HTTP API/direct callers pass a NaN/Infinity/astronomical value straight in, and Date.now()+it overflows the valid Date range → claim()/next() throw a raw "Invalid time value", an agent\'s most-used calls',
+    file: 'src/services.js',
+    find: '    const lease = posInt(lease_ms, 600_000, MAX_LEASE_MS);',
+    into: '    const lease = lease_ms;',
+  },
 ];
 
 // spawnSync returns status:null when IT kills the child for exceeding the timeout — a TIMEOUT,

@@ -13,6 +13,13 @@ function emit(activity) {
 // a query param) to a positive integer, capped, else the default — so a bad
 // `?limit=abc` can't bind `LIMIT NaN` (SQL error) or slice(0, NaN) to nothing.
 const posInt = (v, def, cap = 500) => (Number.isFinite(+v) && +v > 0 ? Math.min(Math.floor(+v), cap) : def);
+// A lease is a duration in ms and, exactly like the counts above, arrives from a query param / JSON
+// body / direct caller — so it needs the same coercion. Beyond honesty it is a hard safety bound:
+// `Date.now() + lease` must stay inside the valid Date range, or `.toISOString()` throws a raw
+// "RangeError: Invalid time value" on claim()/next() — an agent's most-used calls — for a NaN
+// ('?lease_ms=abc'), Infinity, or an astronomically large number. Capped at a year: a task auto-locked
+// longer than that is a mistake, not a lease.
+const MAX_LEASE_MS = 365 * 24 * 60 * 60 * 1000;   // 1 year
 // ≈4 chars/token — the same estimate every other tool in this kit uses, so the budgets mean the
 // same thing across them.
 const estTokens = (s) => Math.ceil(String(s || '').length / 4);
@@ -510,7 +517,10 @@ export const Tasks = {
     const t = get(`SELECT * FROM tasks WHERE id=?`, id);
     if (!t) throw new Error('task not found');
     const ts = now();
-    const until = new Date(Date.now() + Math.max(30_000, lease_ms)).toISOString();
+    // Coerce lease_ms before it reaches Date arithmetic — a bad value must fall back to the default,
+    // never throw "Invalid time value". The 30s floor below still protects legit small leases.
+    const lease = posInt(lease_ms, 600_000, MAX_LEASE_MS);
+    const until = new Date(Date.now() + Math.max(30_000, lease)).toISOString();
     const r = run(
       `UPDATE tasks SET assignee=?, claimed_at=?, lease_until=?, updated_at=?
        WHERE id=? AND (assignee IS NULL OR assignee='' OR assignee=? OR lease_until IS NULL OR lease_until < ?)`,
