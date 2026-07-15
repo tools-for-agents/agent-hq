@@ -29,6 +29,12 @@ const tokenCount = (v) => (Number.isFinite(+v) && +v >= 0 ? Math.floor(+v) : 0);
 // An explicit cost_usd is honoured only if it is a usable non-negative number; otherwise we PRICE from the
 // (now-clean) tokens rather than store garbage. `?? ` not `||`, so a legitimate cost of exactly 0 stands.
 const usableCost = (v) => (v != null && Number.isFinite(+v) && +v >= 0 ? +v : null);
+// send() canonicalizes a message recipient to the agent id, so the READERS (inbox/unreadCount) and the
+// SENDER must resolve their agent the SAME way — or a message stored under an id is invisible to a caller
+// who passes a name, and a broadcast's own author isn't recognised (self-messages leak into your inbox).
+// id-or-name in, canonical id out — the contract Agents.get uses everywhere. Lenient: an unresolved value
+// passes through (a non-agent simply has no messages; send() throws separately on an unknown RECIPIENT).
+const agentId = (v) => (v == null ? v : (Agents.get(v)?.id ?? v));
 // ≈4 chars/token — the same estimate every other tool in this kit uses, so the budgets mean the
 // same thing across them.
 const estTokens = (s) => Math.ceil(String(s || '').length / 4);
@@ -673,6 +679,7 @@ export const Messages = {
         + `Pass a registered agent id or name, or omit to_agent to broadcast to everyone.`);
       to_agent = rcpt.id;
     }
+    from_agent = agentId(from_agent);   // canonicalize the sender too, so inbox's own-message filter recognises it
     const id = uid('msg_');
     run(`INSERT INTO messages (id,from_agent,to_agent,task_id,body,read,created_at)
          VALUES (?,?,?,?,?,0,?)`, id, from_agent, to_agent, task_id, body, now());
@@ -687,6 +694,7 @@ export const Messages = {
   // is per-agent (message_reads), so broadcasts are unread until each agent reads.
   inbox({ agent, unread_only = false, limit = 50, mark_read = false, max_tokens = INBOX_MAX_TOKENS }) {
     if (!agent) throw new Error('agent required');
+    agent = agentId(agent);   // read by id OR name — messages are stored under the canonical id (see send)
     let sql = `SELECT m.*, (r.agent_id IS NOT NULL) AS is_read
                FROM messages m
                LEFT JOIN message_reads r ON r.message_id=m.id AND r.agent_id=?
@@ -707,6 +715,7 @@ export const Messages = {
   },
 
   unreadCount(agent) {
+    agent = agentId(agent);   // same canonicalization as inbox — the badge must count what the inbox shows
     return get(`SELECT COUNT(*) n FROM messages m
                 LEFT JOIN message_reads r ON r.message_id=m.id AND r.agent_id=?
                 WHERE (m.to_agent=? OR m.to_agent IS NULL) AND (m.from_agent IS NULL OR m.from_agent!=?)

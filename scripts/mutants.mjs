@@ -173,6 +173,12 @@ const CANARIES = [
     find: '      to_agent = rcpt.id;',
     into: '      void rcpt;',
   },
+  {
+    why: 'BOTH sides of a message must canonicalize the agent the same way — send() resolves the recipient to an id, so if the readers (inbox/unreadCount) and the sender do not, a message stored under an id is invisible to a name (and a broadcast author sees their own message). The helper is that single point.',
+    file: 'src/services.js',
+    find: 'const agentId = (v) => (v == null ? v : (Agents.get(v)?.id ?? v));',
+    into: 'const agentId = (v) => v;',
+  },
 ];
 
 // spawnSync returns status:null when IT kills the child for exceeding the timeout — a TIMEOUT,

@@ -325,6 +325,25 @@ test('messages: a recipient addressed by NAME is delivered (not silently lost), 
   assert.equal(Messages.send({ from_agent: ann.id, to_agent: null, body: 'all' }).to_agent, null, 'a null recipient is still a broadcast');
 });
 
+test('messages: id and name are interchangeable on BOTH sides — send and read agree on who', () => {
+  const cyn = Agents.register({ name: 'Cyn-id', role: 'r', avatar: '🇨' });
+  const dan = Agents.register({ name: 'Dan-id', role: 'r', avatar: '🇩' });
+  // send() canonicalizes the recipient to the id; the READERS must resolve their agent the same way, or a
+  // message stored under an id is invisible to a caller passing a name (send accepts names, so read must too).
+  // All four send/read × id/name combinations must deliver.
+  for (const [to, read, tag] of [[dan.id, dan.id, 'id/id'], ['Dan-id', dan.id, 'name/id'],
+                                 [dan.id, 'Dan-id', 'id/name'], ['Dan-id', 'Dan-id', 'name/name']]) {
+    const m = Messages.send({ from_agent: cyn.id, to_agent: to, body: `body-${tag}` });
+    assert.ok(Messages.inbox({ agent: read }).some((x) => x.id === m.id), `send/read ${tag} delivers`);
+  }
+  // The SENDER is canonicalized too: a broadcast addressed from a NAME must not land in the author's own inbox.
+  const bc = Messages.send({ from_agent: 'Cyn-id', to_agent: null, body: 'cyn-bcast' });
+  assert.ok(!Messages.inbox({ agent: cyn.id }).some((m) => m.id === bc.id), 'a broadcast author does not see their own message');
+  assert.ok(Messages.inbox({ agent: dan.id }).some((m) => m.id === bc.id), 'but everyone else does');
+  // the unread badge counts by the same identity the inbox reads by
+  assert.equal(Messages.unreadCount('Dan-id'), Messages.unreadCount(dan.id), 'unreadCount agrees by name and by id');
+});
+
 test('ledger: summary exposes a chronological spend series (drives the sparkline)', () => {
   const gil = Agents.register({ name: 'Gil-ledger', role: 'r', avatar: '💠' });
   Ledger.record({ agent_id: gil.id, label: 'plan', model: 'claude-haiku-4-5-20251001', input_tokens: 100, output_tokens: 50, cost_usd: 0.01 });
