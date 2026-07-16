@@ -5,3 +5,6 @@ data/
 *.db
 *.db-*
 .mutants.lock
+
+# iris writes screenshots to ./.iris relative to the CWD it runs in — output, not source.
+.iris/
