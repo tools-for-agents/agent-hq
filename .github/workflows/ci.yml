@@ -120,6 +120,51 @@ jobs:
             const shown=e=>{const s=getComputedStyle(e),r=e.getBoundingClientRect();return s.visibility!=='hidden'&&s.display!=='none'&&r.width>0&&r.height>0;};const vis=[...document.querySelectorAll('.empty,.empty2,.welcome,.list-empty,.detail-empty,.flow-empty,.act-empty')].filter(shown);if(!vis.length) throw new Error('THE SERVER SAID EMPTY AND THE PAGE SAID NOTHING — a fresh install shows the user a blank room');
           tokens: kit
 
+  # ── SEVEN OF THE EIGHT VIEWS HAD NEVER BEEN RENDERED BY ANYTHING ──────────────
+  #
+  # This app is TABS: Kanban, Flow, Agents, Memory, Graph, Messages, Ledger, Activity. Every gate
+  # here — look, states, first-run, dead-api, slow-api, refused-write — loads the page and audits
+  # whichever one it boots into. That is one view out of eight. The other seven are shipped, and
+  # nothing has ever looked at them.
+  #
+  # It is the same shape this repo keeps paying for ("a screenshot of an empty room", "the gate was
+  # standing in the doorway"), and the same argument as the note in `look`: a state that is never
+  # rendered is a state that is never checked, and it will rot, quietly, forever. They are all clean
+  # today — that is exactly the moment to put a gate on them, while it costs nothing.
+  #
+  # One job per view, so a failure names the view.
+  look-views:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        view: [board, flow, agents, memory, graph, messages, ledger, activity]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Serve it, THEN seed it — and prove the board is not empty
+        run: |
+          PORT=7700 node src/server.js &
+          for i in $(seq 30); do curl -sf http://localhost:7700/api/health >/dev/null && break; sleep 1; done
+          HQ_URL=http://localhost:7700 npm run seed
+          n=$(curl -sf "http://localhost:7700/api/tasks?limit=200" | node -pe "JSON.parse(require('fs').readFileSync(0)).length ?? 0")
+          echo "seeded tasks: $n"
+          test "$n" -gt 0 || { echo "::error::the board is empty — every view would be an empty room"; exit 1; }
+      - uses: tools-for-agents/iris@main
+        with:
+          url: http://localhost:7700/
+          viewports: desktop
+          name: hq-${{ matrix.view }}
+          tokens: kit      # the kit's ONE design system — iris/tokens.json, not a copy
+          strict: true     # drift is a regression now; a gate is what keeps it from creeping back
+          # Click the tab, then PROVE we arrived and that something rendered. A --pre that throws makes
+          # iris report "the state was never reached and NOTHING was audited" instead of quietly
+          # grading the Kanban board again and calling it Ledger.
+          pre: >-
+            await new Promise(r=>setTimeout(r,1500));const t=document.querySelector('.tab[data-view="${{ matrix.view }}"]');if(!t) throw new Error('no such tab: ${{ matrix.view }}');t.click();await new Promise(r=>setTimeout(r,1800));const now=document.querySelector('.tab.active')?.dataset.view;if(now!=='${{ matrix.view }}') throw new Error('the tab did not switch — still on '+now);const main=document.querySelector('main,.view,#view');if(!main||!main.textContent.trim()) throw new Error('the ${{ matrix.view }} view rendered EMPTY — that is an empty room, not a view');
+
   # ── THE STATES NOTHING EVER RENDERED ──────────────────────────────────────────
   # `test` proves the logic. `look` renders the page WORKING. `first-run` renders it
   # EMPTY. Not one of them has ever rendered a control that cannot be pressed, or a row
@@ -138,11 +183,27 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: Serve it
+      # 🔑 THE SEED RAN BEFORE THE SERVER, AND `|| true` ATE THE PROOF.
+      #
+      # `npm run seed` posts over HTTP. With nothing listening it died with ECONNREFUSED, `|| true`
+      # swallowed it, and this gate posed `.blocked` on a board with NO CARDS ON IT — then reported
+      # "✓ nothing broken" about an empty room, every run, for the life of the job.
+      #
+      # Which is the bug the `look` job above already carries a comment about: "agent-hq's gate had
+      # been auditing a blank board for months. It went green every time. The seed script existed;
+      # nobody ran it." That job was fixed. This one, next door, was not — and the same `|| true`
+      # that hid it in the first place hid it again.
+      #
+      # So: server FIRST, then seed, then PROVE there is something to pose on. A gate that cannot
+      # tell an empty board from a healthy one is not a gate.
+      - name: Serve it, THEN seed it — and prove the board is not empty
         run: |
-          npm run seed || true
-          PORT=7700 npm start &
-          for i in $(seq 30); do curl -sf http://localhost:7700/ >/dev/null && break; sleep 1; done
+          PORT=7700 node src/server.js &
+          for i in $(seq 30); do curl -sf http://localhost:7700/api/health >/dev/null && break; sleep 1; done
+          HQ_URL=http://localhost:7700 npm run seed
+          n=$(curl -sf "http://localhost:7700/api/tasks?limit=200" | node -pe "JSON.parse(require('fs').readFileSync(0)).length ?? 0")
+          echo "cards the gate will pose: $n"
+          test "$n" -gt 0 || { echo "::error::the board is empty — iris would pose .blocked on nothing and call it a state"; exit 1; }
       - uses: tools-for-agents/iris@main
         with:
           url: http://localhost:7700/
@@ -174,11 +235,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      # No seed, and none is possible: this gate stubs every /api/ call, so nothing a seed wrote could
+      # reach the page. It ran `npm run seed || true` anyway — BEFORE the server existed, so it died
+      # with ECONNREFUSED every run and `|| true` ate the evidence. Dead code that always fails
+      # silently is the camouflage that let the same line hide a REAL empty-board bug in `states`.
       - name: Serve it
         run: |
-          npm run seed || true
-          PORT=7700 npm start &
-          for i in $(seq 30); do curl -sf http://localhost:7700/ >/dev/null && break; sleep 1; done
+          PORT=7700 node src/server.js &
+          for i in $(seq 30); do curl -sf http://localhost:7700/api/health >/dev/null && break; sleep 1; done
       - uses: tools-for-agents/iris@main
         with:
           url: http://localhost:7700/
@@ -208,11 +272,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      # No seed, and none is possible: this gate stubs every /api/ call, so nothing a seed wrote could
+      # reach the page. It ran `npm run seed || true` anyway — BEFORE the server existed, so it died
+      # with ECONNREFUSED every run and `|| true` ate the evidence. Dead code that always fails
+      # silently is the camouflage that let the same line hide a REAL empty-board bug in `states`.
       - name: Serve it
         run: |
-          npm run seed || true
-          PORT=7700 npm start &
-          for i in $(seq 30); do curl -sf http://localhost:7700/ >/dev/null && break; sleep 1; done
+          PORT=7700 node src/server.js &
+          for i in $(seq 30); do curl -sf http://localhost:7700/api/health >/dev/null && break; sleep 1; done
       - uses: tools-for-agents/iris@main
         with:
           url: http://localhost:7700/
@@ -243,11 +310,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: Serve it
+      # This gate stubs only NON-GET, so its reads pass through and the board behind the refusal is
+      # real — which means the seed matters, and it was running BEFORE the server (ECONNREFUSED,
+      # swallowed by `|| true`). The banner was being judged against an empty room.
+      - name: Serve it, THEN seed it
         run: |
-          npm run seed || true
-          PORT=7700 npm start &
-          for i in $(seq 30); do curl -sf http://localhost:7700/ >/dev/null && break; sleep 1; done
+          PORT=7700 node src/server.js &
+          for i in $(seq 30); do curl -sf http://localhost:7700/api/health >/dev/null && break; sleep 1; done
+          HQ_URL=http://localhost:7700 npm run seed
       - uses: tools-for-agents/iris@main
         with:
           url: http://localhost:7700/
