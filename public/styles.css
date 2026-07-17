@@ -136,7 +136,12 @@ main { grid-area: main; overflow: auto; padding: 16px 24px; }
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
   box-shadow: var(--shadow); padding: 24px 24px 20px; animation: mrise .14s ease; }
 @keyframes mrise { from { transform: translateY(8px); opacity: .4; } to { transform: none; opacity: 1; } }
+/* A <button> with a width and no padding is not padding-free: Chrome's UA sheet says 1px 6px, and
+   6px is off the 4px grid this kit declares. All three close buttons here were written the same way
+   and all three inherited it — nothing ever rendered them, so nothing ever said so. Centring the
+   glyph with grid instead of leaving it to the UA's padding is what cortex's .close already does. */
 .modal-x { position: absolute; top: 12px; right: 12px; width: 30px; height: 30px; border-radius: 8px;
+  display: grid; place-items: center; padding: 0;
   background: var(--panel-2); border: 1px solid var(--line); color: var(--muted); font-size: 16px;
   line-height: 1; cursor: pointer; }
 .modal-x:hover { color: var(--txt); border-color: var(--accent); }
@@ -351,6 +356,7 @@ main { grid-area: main; overflow: auto; padding: 16px 24px; }
 .gp-close {
   position: absolute; top: 12px; right: 12px; background: var(--panel-2); border: 1px solid var(--line);
   color: var(--muted); width: 28px; height: 28px; border-radius: 8px; cursor: pointer; font-size: 12px;
+  display: grid; place-items: center; padding: 0;
 }
 .gp-close:hover { color: var(--txt); border-color: var(--accent); }
 .gp-body { padding: 20px 16px; }
@@ -470,6 +476,7 @@ main { grid-area: main; overflow: auto; padding: 16px 24px; }
 .modal.nt { width: min(560px, 100%); }
 .nt-h { margin: 0 0 16px; font-size: 16px; }
 .nt-x { position: absolute; top: 12px; right: 14px; width: 30px; height: 30px; border-radius: 8px; background: var(--panel-2);
+  display: grid; place-items: center; padding: 0;
   border: 1px solid var(--line); color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer; }
 .nt-x:hover { color: var(--txt); border-color: var(--accent); }
 .nt-in { width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; color: var(--txt);

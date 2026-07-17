@@ -133,12 +133,29 @@ jobs:
   # today — that is exactly the moment to put a gate on them, while it costs nothing.
   #
   # One job per view, so a failure names the view.
+  # 🔑 THE HOVER LISTS ARE PER-VIEW BECAUSE THE TRUTH IS PER-VIEW.
+  #
+  # This was one union list of 16 for all eight views, and iris said 15 of them "landed" on every
+  # single one — .card on the ledger, .agent on the board. They cannot all be there. It counted a
+  # selector as landed when it MATCHED THE DOM, and this is an SPA that mounts every view and hides
+  # the inactive ones, so every selector matched everywhere and nothing was ever reported as unseen.
+  #
+  # iris counts what RENDERS now (iris ad44ffe), and the real answer is 2–5 per view. Each view
+  # names what that view actually puts on the screen; a list that names more is a list that lies.
   look-views:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        view: [board, flow, agents, memory, graph, messages, ledger, activity]
+        include:
+          - { view: board,    hover: '.bf, .card, .new-task, .tab, .xtk a' }
+          - { view: flow,     hover: '.tab, .xtk a' }
+          - { view: agents,   hover: '.agent, .tab, .xtk a' }
+          - { view: memory,   hover: '.nsf, .tab, .xtk a' }
+          - { view: graph,    hover: '.gl-item, .graph-controls button, .tab, .xtk a' }
+          - { view: messages, hover: '.compose-send, .tab, .xtk a' }
+          - { view: ledger,   hover: '.tab, .xtk a' }
+          - { view: activity, hover: '.actf, .tab, .xtk a' }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -166,8 +183,8 @@ jobs:
           # A HOVER STATE IS CSS NOBODY HAS EVER LOOKED AT — JS cannot pose :hover, it is the
           # browser's own. cortex, anvil and recall each shipped a real bug behind one. This board
           # is the last surface in the kit that had never been swept; it comes back clean, and the
-          # gate is here so it stays that way.
-          hover: '.actf, .agent, .bf, .card, .compose-send, .gl-item, .gp-close, .graph-controls button, .graph-filterpill, .modal-x, .new-task, .nsf, .nt-go, .nt-x, .tab, .xtk a'
+          # gate is here so it stays that way. What each view really renders — see the note above.
+          hover: ${{ matrix.hover }}
           # Click the tab, then PROVE we arrived and that something rendered. A --pre that throws makes
           # iris report "the state was never reached and NOTHING was audited" instead of quietly
           # grading the Kanban board again and calling it Ledger.
@@ -177,6 +194,47 @@ jobs:
           # run that ever opened it. A poll waits for the tab to ARRIVE.
           pre: >-
             const until=async(f,ms=9000)=>{const t=Date.now()+ms;while(Date.now()<t){if(f())return true;await new Promise(r=>setTimeout(r,50));}throw new Error('timed out waiting for the ${{ matrix.view }} view to arrive');};await until(()=>document.querySelectorAll('.tab').length>0);const t=document.querySelector('.tab[data-view="${{ matrix.view }}"]');if(!t) throw new Error('no such tab: ${{ matrix.view }}');t.click();await until(()=>document.querySelector('.tab.active')?.dataset.view==='${{ matrix.view }}');await until(()=>{const m=document.querySelector('main,.view,#view');return m&&m.textContent.trim();});
+
+  # ── THE MODAL NOTHING EVER OPENED ─────────────────────────────────────────────
+  #
+  # Eleven of this stylesheet's twenty-two hover selectors render in NO view: the new-task modal
+  # (.nt-*), the task modal's close (.modal-x), the graph's detail panel (.gp-*, .gsd-item,
+  # .graph-filterpill), .ag-row, .tm-dep. Half the hover surface of this app is behind a button,
+  # and look-views cannot press it — every one of those is a door, not a defect in a view.
+  #
+  # I only learned the number was ELEVEN once iris started counting what renders instead of what
+  # matches (ad44ffe). Before that the report said 15 of 22 landed on every view and I believed it
+  # in a commit message, which is the whole reason that fix matters.
+  #
+  # And a bug was living in here: button#nt-x is 6px off the 4px grid this kit declares, because a
+  # <button> with a width and no padding gets Chrome's UA 1px 6px. All three close buttons in this
+  # file were written that way. `strict: true` fails on it — the first gate to open the door found
+  # it immediately, which is the only reason it is fixed.
+  look-modal:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Serve it, THEN seed it — a modal over an empty board is still an empty room
+        run: |
+          PORT=7700 node src/server.js &
+          for i in $(seq 30); do curl -sf http://localhost:7700/api/health >/dev/null && break; sleep 1; done
+          HQ_URL=http://localhost:7700 npm run seed
+          n=$(curl -sf "http://localhost:7700/api/tasks?limit=200" | node -pe "JSON.parse(require('fs').readFileSync(0)).length ?? 0")
+          echo "seeded tasks: $n"
+          test "$n" -gt 0 || { echo "::error::the board is empty — the modal would open over nothing"; exit 1; }
+      - uses: tools-for-agents/iris@main
+        with:
+          url: http://localhost:7700/
+          viewports: phone,tablet,desktop
+          name: hq-new-task
+          tokens: kit
+          strict: true
+          hover: '.nt-go, .nt-x, .new-task'
+          pre: >-
+            const until=async(f,ms=9000)=>{const t=Date.now()+ms;while(Date.now()<t){if(f())return true;await new Promise(r=>setTimeout(r,50));}throw new Error('timed out waiting for the new-task modal to arrive');};await until(()=>document.querySelectorAll('.tab').length>0);document.getElementById('newTaskBtn').click();await until(()=>document.getElementById('nt-title'));
 
   # ── THE STATES NOTHING EVER RENDERED ──────────────────────────────────────────
   # `test` proves the logic. `look` renders the page WORKING. `first-run` renders it
