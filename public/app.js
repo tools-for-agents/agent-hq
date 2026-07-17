@@ -439,7 +439,7 @@ function renderTaskModal(t) {
   ].filter(Boolean).join('');
   const deps = (t.deps || []).map((d) => {
     const info = TASK_INDEX[d];
-    return `<div class="tm-dep" data-task="${esc(d)}"><span class="dep-mark">🔗</span>${esc(info ? info.title : d)}${info && info.column ? ` <span style="color:var(--muted)">· ${esc(info.column)}</span>` : ''}</div>`;
+    return `<div class="tm-dep" data-task="${esc(d)}" role="button" tabindex="0" aria-label="Open ${esc(info ? info.title : d)}"><span class="dep-mark">🔗</span>${esc(info ? info.title : d)}${info && info.column ? ` <span style="color:var(--muted)">· ${esc(info.column)}</span>` : ''}</div>`;
   }).join('');
   const comments = (t.comments || []).map((c) => {
     const ca = AGENTS[c.author];
@@ -506,7 +506,7 @@ function renderAgentModal(a, mems, acts, spend, flow) {
     `<span class="tm-pill">${esc(a.role)}</span>`,
     (spend && spend.runs) ? `<span class="tm-pill">$${(spend.cost_usd || 0).toFixed(4)} · ${spend.runs} run${spend.runs === 1 ? '' : 's'} · ${fmtTok((spend.input_tokens || 0) + (spend.output_tokens || 0))} tok</span>` : '',
   ].filter(Boolean).join('');
-  const memRows = mems.map((m) => `<div class="ag-row" data-mem="${esc(m.id)}" title="Open in the Memory tab"><span class="ag-ns">${esc(m.namespace)}</span><span class="ag-t">${esc(m.title)}</span><span class="ag-imp">${'★'.repeat(m.importance || 0)}</span></div>`).join('');
+  const memRows = mems.map((m) => `<div class="ag-row" data-mem="${esc(m.id)}" role="button" tabindex="0" aria-label="Open ${esc(m.title)} in the Memory tab" title="Open in the Memory tab"><span class="ag-ns">${esc(m.namespace)}</span><span class="ag-t">${esc(m.title)}</span><span class="ag-imp">${'★'.repeat(m.importance || 0)}</span></div>`).join('');
   const actRows = acts.map((x) => `<div class="ag-act"><span class="t">${ago(x.ts)}</span><span class="s">${esc(x.summary)}</span></div>`).join('');
   $('#tm-body').innerHTML = `
     <h3 class="tm-h" id="tm-title">${a.avatar || '🤖'} ${esc(a.name)}</h3>
@@ -526,6 +526,15 @@ $('#agents').addEventListener('keydown', (e) => { const c = e.target.closest('[d
 $('#tm-body').addEventListener('click', (e) => {
   const d = e.target.closest('.tm-dep[data-task]'); if (d) { openTask(d.dataset.task); return; }
   const m = e.target.closest('.ag-row[data-mem]'); if (m) { closeTask(); activateTab('memory'); focusMemory(m.dataset.mem); }
+});
+// The dependency rows and the agent's memory rows are role="button" — a promise that Enter and
+// Space work. The .card and .agent tiles that OPEN this modal had that keydown from the start; the
+// rows INSIDE it were written with a click and a :focus-visible style and no way to focus, so the
+// focus ring was a rule nothing could ever trigger. This keeps the promise.
+$('#tm-body').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const d = e.target.closest('.tm-dep[data-task]'); if (d) { e.preventDefault(); openTask(d.dataset.task); return; }
+  const m = e.target.closest('.ag-row[data-mem]'); if (m) { e.preventDefault(); closeTask(); activateTab('memory'); focusMemory(m.dataset.mem); }
 });
 
 const fmtTok = (n) => n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n || 0);

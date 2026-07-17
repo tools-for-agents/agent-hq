@@ -27,8 +27,13 @@ const run = async () => {
 
   await T('Done', { title: 'Stand up Agent HQ platform', priority: 'high', assignee: agents.Forge, labels: ['infra'], created_by: agents.Atlas });
   await T('Review', { title: 'Live dashboard for human oversight', priority: 'high', assignee: agents.Pixel, labels: ['frontend'], created_by: agents.Atlas });
-  await T('In Progress', { title: 'MCP tool surface for all agents', priority: 'urgent', assignee: agents.Forge, labels: ['mcp', 'platform'], created_by: agents.Atlas });
-  await T('In Progress', { title: 'Survey & fork best-in-class agent tools', priority: 'medium', assignee: agents.Sage, labels: ['research'], created_by: agents.Atlas });
+  const mcpTask = await T('In Progress', { title: 'MCP tool surface for all agents', priority: 'urgent', assignee: agents.Forge, labels: ['mcp', 'platform'], created_by: agents.Atlas });
+  const surveyTask = await T('In Progress', { title: 'Survey & fork best-in-class agent tools', priority: 'medium', assignee: agents.Sage, labels: ['research'], created_by: agents.Atlas });
+  // 🔑 A REAL BOARD HAS DEPENDENCIES, AND THE SEED HAD NONE — so the task modal's "Depends on"
+  // section (`.tm-dep`) rendered on no gate, and it shipped mouse-only: role="button" and a
+  // :focus-visible style with no tabindex to make either mean anything. You cannot audit a
+  // relationship you never create. The MCP surface genuinely waits on the survey; say so.
+  if (mcpTask?.id && surveyTask?.id) await post(`/api/tasks/${mcpTask.id}/deps`, { depends_on: surveyTask.id });
   await T('Todo', { title: 'Adversarial review of memory permissions', priority: 'high', assignee: agents.Sentinel, labels: ['security'], created_by: agents.Atlas });
   await T('Todo', { title: 'Agent heartbeat & auto-offline detection', priority: 'medium', labels: ['platform'], created_by: agents.Atlas });
   await T('Backlog', { title: 'Cost & token accounting per agent', priority: 'low', labels: ['ops'], created_by: agents.Atlas });

@@ -235,6 +235,37 @@ jobs:
           hover: '.nt-go, .nt-x, .new-task'
           pre: >-
             const until=async(f,ms=9000)=>{const t=Date.now()+ms;while(Date.now()<t){if(f())return true;await new Promise(r=>setTimeout(r,50));}throw new Error('timed out waiting for the new-task modal to arrive');};await until(()=>document.querySelectorAll('.tab').length>0);document.getElementById('newTaskBtn').click();await until(()=>document.getElementById('nt-title'));
+      # THE TASK-DETAIL MODAL, AND THE ROWS INSIDE IT. The new-task modal above is one door; the
+      # OTHER modal — the one you get by clicking a card — holds two more that nothing had opened:
+      #   .tm-dep — the "Depends on" rows. They render only for a task that HAS a dependency, and
+      #     the seed had none, so this section had never been on screen. It shipped mouse-only:
+      #     role-less, tabindex-less, with a :focus-visible style nothing could trigger. The seed
+      #     now links the MCP task to the survey it waits on — a relationship you cannot audit
+      #     unless you create it.
+      #   .ag-row — the agent-detail modal's memory rows, the same defect, the same fix. Both got
+      #     the tabindex/role/keydown the .card and .agent tiles that OPEN the modals had all along.
+      - name: the task-detail modal — the "Depends on" rows
+        uses: tools-for-agents/iris@main
+        with:
+          url: http://localhost:7700/
+          viewports: phone,tablet,desktop
+          name: hq-task-modal
+          tokens: kit
+          strict: true
+          hover: '.tm-dep'
+          pre: >-
+            const until=async(f,ms=9000,w='')=>{const t=Date.now()+ms;while(Date.now()<t){const v=f();if(v)return v;await new Promise(r=>setTimeout(r,50));}throw new Error('timed out waiting for '+w);};await until(()=>document.querySelectorAll('.tab').length>0,9000,'the tabs');const cards=await until(()=>{const c=[...document.querySelectorAll('[data-task]')];return c.length?c:null;},9000,'the board');const tasks=await (await fetch('/api/tasks?limit=200')).json();let dep=null;for(const t of tasks){const full=await (await fetch('/api/tasks/'+t.id)).json();if((full.deps||full.depends_on||[]).length){dep=t.id;break;}}if(!dep) throw new Error('no task has a dependency — the seed did not create one, so .tm-dep cannot render');const card=cards.find((c)=>c.dataset.task===dep);if(!card) throw new Error('the task with a dep is not on the board');card.click();const rows=await until(()=>{const n=document.querySelectorAll('.tm-dep');return n.length?n:null;},9000,'the dependency rows');if(rows[0].getAttribute('tabindex')!=='0'||rows[0].getAttribute('role')!=='button') throw new Error('a .tm-dep row is mouse-only again — no tabindex/role');
+      - name: the agent-detail modal — the memory rows
+        uses: tools-for-agents/iris@main
+        with:
+          url: http://localhost:7700/
+          viewports: phone,tablet,desktop
+          name: hq-agent-modal
+          tokens: kit
+          strict: true
+          hover: '.ag-row'
+          pre: >-
+            const until=async(f,ms=9000,w='')=>{const t=Date.now()+ms;while(Date.now()<t){const v=f();if(v)return v;await new Promise(r=>setTimeout(r,50));}throw new Error('timed out waiting for '+w);};await until(()=>document.querySelectorAll('.tab').length>0,9000,'the tabs');[...document.querySelectorAll('.tab')].find((t)=>/agents/i.test(t.textContent)).click();const grid=await until(()=>{const g=[...document.querySelectorAll('[data-agent]')];return g.length?g:null;},9000,'the agent grid');grid[0].click();const rows=await until(()=>{const n=document.querySelectorAll('.ag-row');return n.length?n:null;},9000,'the agent memory rows');if(rows[0].getAttribute('tabindex')!=='0'||rows[0].getAttribute('role')!=='button') throw new Error('an .ag-row is mouse-only again — no tabindex/role');
 
   # ── THE GRAPH'S THREE SHUT DOORS ──────────────────────────────────────────────
   #
