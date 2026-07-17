@@ -155,15 +155,28 @@ jobs:
       - uses: tools-for-agents/iris@main
         with:
           url: http://localhost:7700/
-          viewports: desktop
+          # 🔑 WAS `desktop`. Eight views, every one of them rendered at one width, for months.
+          # cortex's panels were clean on desktop and broke on a phone in four separate ways —
+          # a panel 17px off the screen, a close button you could not reach, the brand 86%
+          # buried. Auditing one viewport is auditing one third of the product.
+          viewports: phone,tablet,desktop
           name: hq-${{ matrix.view }}
           tokens: kit      # the kit's ONE design system — iris/tokens.json, not a copy
           strict: true     # drift is a regression now; a gate is what keeps it from creeping back
+          # A HOVER STATE IS CSS NOBODY HAS EVER LOOKED AT — JS cannot pose :hover, it is the
+          # browser's own. cortex, anvil and recall each shipped a real bug behind one. This board
+          # is the last surface in the kit that had never been swept; it comes back clean, and the
+          # gate is here so it stays that way.
+          hover: '.actf, .agent, .bf, .card, .compose-send, .gl-item, .gp-close, .graph-controls button, .graph-filterpill, .modal-x, .new-task, .nsf, .nt-go, .nt-x, .tab, .xtk a'
           # Click the tab, then PROVE we arrived and that something rendered. A --pre that throws makes
           # iris report "the state was never reached and NOTHING was audited" instead of quietly
           # grading the Kanban board again and calling it Ledger.
+          #
+          # The two sleeps that used to do this (1500/1800) were bets: they pass on a laptop and fail
+          # on a loaded runner. cortex's newest gate caught its own panel mid-slide on the first CI
+          # run that ever opened it. A poll waits for the tab to ARRIVE.
           pre: >-
-            await new Promise(r=>setTimeout(r,1500));const t=document.querySelector('.tab[data-view="${{ matrix.view }}"]');if(!t) throw new Error('no such tab: ${{ matrix.view }}');t.click();await new Promise(r=>setTimeout(r,1800));const now=document.querySelector('.tab.active')?.dataset.view;if(now!=='${{ matrix.view }}') throw new Error('the tab did not switch — still on '+now);const main=document.querySelector('main,.view,#view');if(!main||!main.textContent.trim()) throw new Error('the ${{ matrix.view }} view rendered EMPTY — that is an empty room, not a view');
+            const until=async(f,ms=9000)=>{const t=Date.now()+ms;while(Date.now()<t){if(f())return true;await new Promise(r=>setTimeout(r,50));}throw new Error('timed out waiting for the ${{ matrix.view }} view to arrive');};await until(()=>document.querySelectorAll('.tab').length>0);const t=document.querySelector('.tab[data-view="${{ matrix.view }}"]');if(!t) throw new Error('no such tab: ${{ matrix.view }}');t.click();await until(()=>document.querySelector('.tab.active')?.dataset.view==='${{ matrix.view }}');await until(()=>{const m=document.querySelector('main,.view,#view');return m&&m.textContent.trim();});
 
   # ── THE STATES NOTHING EVER RENDERED ──────────────────────────────────────────
   # `test` proves the logic. `look` renders the page WORKING. `first-run` renders it
@@ -326,5 +339,13 @@ jobs:
           name: refused-write
           boot: >-
             const f=window.fetch;window.fetch=(u,o)=>(o&&o.method&&o.method!=='GET')?Promise.resolve(new Response('{"error":"the server refused the write"}',{status:500,headers:{'content-type':'application/json'}})):f(u,o);
+          # Every wait here polls for the thing to ARRIVE. The sleeps that used to open this — 400ms
+          # for the modal, 2000ms for the answer — were bets that pass on a laptop and fail on a
+          # loaded runner. Not hypothetical: cortex's newest gate photographed its own panel 17px
+          # from home, mid-slide, on the first CI run that ever opened it.
+          #
+          # The 2000ms one let BOTH conditions settle before asserting, so the poll has to wait for
+          # both too — for the page to have spoken AND stopped spinning. Polling only for the message
+          # can catch the button mid-reset and report it stuck when it is merely on its way back.
           pre: >-
-            document.getElementById('newTaskBtn').click();await new Promise(r=>setTimeout(r,400));const t=document.getElementById('nt-title');t.value='a task that will never be created';t.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('nt-go').click();await new Promise(r=>setTimeout(r,2000));const stuck=[...document.querySelectorAll('button')].filter(b=>b.disabled&&/…|ing\b/i.test(b.textContent));if(stuck.length) throw new Error('THE WRITE FAILED AND THE BUTTON IS STILL SPINNING: '+stuck.map(b=>b.textContent.trim()).join(', '));const said=[...document.querySelectorAll('*')].some(e=>e.children.length===0&&/refused the write/i.test(e.textContent));if(!said) throw new Error('THE WRITE FAILED AND THE PAGE SAID NOTHING — the user cannot tell whether their work was saved');
+            const settled=async(f,ms=9000)=>{const t=Date.now()+ms;while(Date.now()<t){if(f())return true;await new Promise(r=>setTimeout(r,50));}return false;};const said=()=>[...document.querySelectorAll('*')].some(e=>e.children.length===0&&/refused the write/i.test(e.textContent));const spinning=()=>[...document.querySelectorAll('button')].filter(b=>b.disabled&&/…|ing\b/i.test(b.textContent));document.getElementById('newTaskBtn').click();if(!await settled(()=>document.getElementById('nt-title'))) throw new Error('the new-task modal never opened — there is nothing here to refuse');const t=document.getElementById('nt-title');t.value='a task that will never be created';t.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('nt-go').click();await settled(()=>said()&&!spinning().length);const stuck=spinning();if(stuck.length) throw new Error('THE WRITE FAILED AND THE BUTTON IS STILL SPINNING: '+stuck.map(b=>b.textContent.trim()).join(', '));if(!said()) throw new Error('THE WRITE FAILED AND THE PAGE SAID NOTHING — the user cannot tell whether their work was saved');
