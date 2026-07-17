@@ -547,3 +547,30 @@ main { grid-area: main; overflow: auto; padding: 16px 24px; }
 .ledger-agents .bar .fill.model { background: linear-gradient(90deg, var(--accent-2), var(--accent)); }
 .la-name .mprice { margin-left: 8px; font-size: 12px; color: var(--muted); font-family: ui-monospace, monospace; }
 .la-fig .rate { margin-left: 8px; color: var(--amber); }
+
+/* ── Accessibility: motion ────────────────────────────────────────────────────
+   Every other page in this kit declares what reduced motion means for it — recall says
+   `@media (prefers-reduced-motion: reduce) { .hit { animation:none } }` — and this file
+   declared it for NONE of its five animations. graph.js reads the setting for the force
+   simulation, so the intent was here; the CSS just never got it. A reader with a
+   vestibular disorder asked this app to hold still and it faded, rose and flashed anyway.
+
+   🔑 IT ALSO MADE THE GATE REPORT FICTION. iris emulates `prefers-reduced-motion: reduce`
+   precisely so the picture is the same picture twice, and that only works if the page
+   answers. This one did not, so the audit graded a frame of the 180ms gp-in fade: the
+   SAME text came back at 4.49:1, then 4.09, then 4.17 on identical runs, composited at
+   ~77% opacity — colours that are never on screen long enough for anyone to read. The
+   gate's `pre` was made to wait for getAnimations() to paper over it; this is the actual
+   fix, and the wait comes back out.
+
+   Safe for all five: every one is an entrance or a highlight, none uses `forwards`/`both`,
+   and each keyframe's `to` IS the element's base state — so `animation: none` lands exactly
+   where the animation was going, which is the whole point of it. */
+@media (prefers-reduced-motion: reduce) {
+  .mem.focus { animation: none; }
+  .modal-backdrop { animation: none; }
+  .modal { animation: none; }
+  .feed li.flash { animation: none; }
+  .graph-panel { animation: none; }
+  .card, .agent, .gp-chip, .ag-row, .graph-filterpill { transition: none; }
+}

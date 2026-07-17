@@ -249,12 +249,15 @@ jobs:
   # way to unfilter it from a keyboard), and the search dropdown's 8 rows were unannounced —
   # ↑/↓/Enter drove a selection no screen reader was told about. Both fixed.
   #
-  # 🔑 WAIT FOR THE ANIMATIONS, OR AUDIT A LIE. The panel fades in over 180ms (gp-in). Auditing
-  # while it played measured the text at ~77% opacity — iris reported `contrast 4.49:1`, then
-  # `4.09`, then `4.17` for the SAME element on identical runs, because it was reading a
-  # different frame of the fade each time. Not one of those colours exists on screen for longer
-  # than a fifth of a second. `getAnimations()` + `.finished` makes the state deterministic;
-  # without it this gate reports a different page every run.
+  # 🔑 THIS GATE ONCE REPORTED FICTION, AND THE FIX WAS NOT IN THE GATE. The panel fades in over
+  # 180ms (gp-in), and auditing mid-fade measured the text at ~77% opacity: iris reported
+  # `contrast 4.49:1`, then `4.09`, then `4.17` for the SAME element on identical runs, because
+  # it read a different frame each time. Not one of those colours exists on screen for longer
+  # than a fifth of a second. The `pre` grew an `await getAnimations()` to hold the page still
+  # for the camera. It worked, and it was the wrong place: iris ALREADY emulates
+  # prefers-reduced-motion so that the picture is the same picture twice, and this was the one
+  # page in the kit that never answered — five animations, not one rule. It answers now
+  # (styles.css), so the wait is gone: the gate is deterministic because the PRODUCT is.
   look-graph:
     runs-on: ubuntu-latest
     steps:
@@ -302,7 +305,6 @@ jobs:
             if (!rows[0].classList.contains('sel')) throw new Error('ArrowDown did not move the highlight');
             if (s.getAttribute('aria-activedescendant') !== rows[0].id) throw new Error('ArrowDown moved the highlight but not the announcement — they are the same fact');
             if (rows[0].getAttribute('aria-selected') !== 'true') throw new Error('aria-selected did not follow the selection');
-            await Promise.all(document.getAnimations().map((a) => a.finished.catch(() => {})));
 
   # ── THE STATES NOTHING EVER RENDERED ──────────────────────────────────────────
   # `test` proves the logic. `look` renders the page WORKING. `first-run` renders it
