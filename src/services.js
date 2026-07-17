@@ -156,7 +156,12 @@ export const Agents = {
 
 // ── Boards / Columns ───────────────────────────────────────────────────────
 export const Boards = {
-  list: () => all(`SELECT * FROM boards ORDER BY created_at`),
+  // 🔑 created_at IS NOT UNIQUE — tie-break on id (the primary key). A batch that creates several
+  // rows at once shares a timestamp, and ORDER BY a tie falls back to rowid, which a delete can
+  // disturb. This matters most one line down: `LIMIT 1` picks THE default board, and two boards
+  // made in the same tick would otherwise make "which board is default" a coin toss. Same fix as
+  // scout / cortex / anvil; every timestamp ordering in this file now tie-breaks on id.
+  list: () => all(`SELECT * FROM boards ORDER BY created_at, id`),
 
   create({ name, description = '', columns }) {
     const id = uid('brd_');
@@ -194,7 +199,7 @@ export const Boards = {
 
     board.columns = all(`SELECT * FROM columns WHERE board_id=? ORDER BY position`, id);
     for (const col of board.columns) {
-      col.tasks = all(`SELECT * FROM tasks WHERE column_id=? ORDER BY position, created_at`, col.id)
+      col.tasks = all(`SELECT * FROM tasks WHERE column_id=? ORDER BY position, created_at, id`, col.id)
         .map((t) => preview(parse(t, 'labels')))
         .map((t) => {
           const deps = depsOf.get(t.id) || [];
@@ -234,7 +239,7 @@ export const Boards = {
 
   // Returns the first board, creating a default company board if none exist.
   ensureDefault() {
-    let b = get(`SELECT * FROM boards ORDER BY created_at LIMIT 1`);
+    let b = get(`SELECT * FROM boards ORDER BY created_at, id LIMIT 1`);
     if (!b) return Boards.create({ name: 'Company Operations', description: 'Primary board for the agent collective' });
     return Boards.full(b.id);
   },
@@ -255,7 +260,7 @@ export const Flow = {
                WHERE entity='task' AND type IN ('task.created','task.moved') AND ts >= ?`;
     const args = [since];
     if (actor) { sql += ` AND actor = ?`; args.push(actor); }
-    const acts = all(sql + ` ORDER BY ts`, ...args);
+    const acts = all(sql + ` ORDER BY ts, id`, ...args);
 
     // Did this move finish the task? Prefer the structured data we now record;
     // fall back to the summary for rows written before it existed.
@@ -369,7 +374,7 @@ export const Tasks = {
   get(id, { max_tokens = TASK_MAX_TOKENS } = {}) {
     const t = parse(get(`SELECT * FROM tasks WHERE id=?`, id), 'labels');
     if (!t) return null;
-    t.comments = all(`SELECT * FROM comments WHERE task_id=? ORDER BY created_at`, id);
+    t.comments = all(`SELECT * FROM comments WHERE task_id=? ORDER BY created_at, id`, id);
     t.deps = all(`SELECT depends_on FROM task_deps WHERE task_id=?`, id).map((r) => r.depends_on);
     // The record DOES carry the body — that is what a record is for — but not without a ceiling.
     // A budget, not a wall: raise max_tokens and the rest comes back. The budget covers the
@@ -413,7 +418,7 @@ export const Tasks = {
     if (board_id) { sql += ` AND t.board_id=?`; args.push(board_id); }
     if (assignee) { sql += ` AND t.assignee=?`; args.push(assignee); }
     if (status) { sql += ` AND lower(c.name)=lower(?)`; args.push(status); }
-    sql += ` ORDER BY t.position, t.created_at`;
+    sql += ` ORDER BY t.position, t.created_at, t.id`;
     return all(sql, ...args).map((t) => preview(parse(t, 'labels')));
   },
 
@@ -736,7 +741,7 @@ export const Messages = {
   // it — so "📢 everyone" told you a message was BROADCAST, never whether anyone had
   // SEEN it. In a company of agents, "did the team get this?" is the question.
   recent: (limit = 50) => {
-    const rows = all(`SELECT * FROM messages ORDER BY created_at DESC LIMIT ?`, posInt(limit, 50, 500));
+    const rows = all(`SELECT * FROM messages ORDER BY created_at DESC, id DESC LIMIT ?`, posInt(limit, 50, 500));
     if (!rows.length) return rows;
 
     const reads = {};
@@ -863,7 +868,7 @@ export const Activity = {
     if (actor) { where.push(`actor = ?`); args.push(actor); }
     if (type) { where.push(`type LIKE ?`); args.push(type + '.%'); }
     if (where.length) sql += ` WHERE ` + where.join(' AND ');
-    sql += ` ORDER BY ts DESC LIMIT ?`; args.push(limit);
+    sql += ` ORDER BY ts DESC, id DESC LIMIT ?`; args.push(limit);
     return all(sql, ...args).map((a) => { try { a.data = a.data ? JSON.parse(a.data) : null; } catch {} return a; });
   },
 };
