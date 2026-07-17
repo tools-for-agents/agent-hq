@@ -471,27 +471,45 @@
   let searchIdx = -1, searchHits = [];
   searchEl.addEventListener('input', () => {
     const q = searchEl.value.trim().toLowerCase();
-    if (!q) { searchDrop.hidden = true; searchHits = []; return; }
+    if (!q) { closeSearchDrop(); searchHits = []; return; }
     searchHits = nodes.filter((n) => n.label.toLowerCase().includes(q))
       .sort((a, b) => a.label.length - b.label.length).slice(0, 8);
     searchIdx = -1;
+    // role=option, driven by the combobox above: focus stays in the input, ↑/↓ move
+    // aria-activedescendant, Enter goes to the node. That is WHY these are not tabbable —
+    // an option you can Tab to is the bug. (cortex's search is the same shape; iris's
+    // unreachable-control asked both of them for tabindex="0" + role="button", the opposite
+    // of the pattern, and was fixed to exempt a declared composite.)
     searchDrop.innerHTML = searchHits.map((n, i) => `
-      <div class="gsd-item" data-i="${i}">
+      <div class="gsd-item" id="gsd-opt-${i}" role="option" aria-selected="false" data-i="${i}">
         <span class="gsd-dot" style="background:${COL[n.type]}"></span>
         <span class="gsd-label">${n.type === 'tag' ? '#' : ''}${escapeHtml(n.label)}</span>
         <span class="gsd-type">${n.type}</span>
-      </div>`).join('') || '<div class="gsd-empty">no matches</div>';
+      </div>`).join('') || '<div class="gsd-empty" role="presentation">no matches</div>';
     searchDrop.hidden = false;
+    searchEl.setAttribute('aria-expanded', 'true');
+    searchEl.removeAttribute('aria-activedescendant');
   });
   searchEl.addEventListener('keydown', (e) => {
     if (searchDrop.hidden) return;
     if (e.key === 'ArrowDown') { searchIdx = Math.min(searchHits.length - 1, searchIdx + 1); markSearch(); e.preventDefault(); }
     else if (e.key === 'ArrowUp') { searchIdx = Math.max(0, searchIdx - 1); markSearch(); e.preventDefault(); }
     else if (e.key === 'Enter') { const n = searchHits[searchIdx] || searchHits[0]; if (n) gotoSearch(n); }
-    else if (e.key === 'Escape') { searchDrop.hidden = true; searchEl.blur(); }
+    else if (e.key === 'Escape') { closeSearchDrop(); searchEl.blur(); }
   });
-  function markSearch() { [...searchDrop.children].forEach((el, i) => el.classList.toggle('sel', i === searchIdx)); }
-  function gotoSearch(n) { searchDrop.hidden = true; searchEl.value = ''; focusNode(n); selectNode(n); }
+  // The highlight and the announcement are ONE fact — write them in one place, or a screen
+  // reader hears nothing while the arrow keys move a selection in front of everyone else.
+  function markSearch() {
+    [...searchDrop.children].forEach((el, i) => {
+      const on = i === searchIdx;
+      el.classList.toggle('sel', on);
+      if (el.getAttribute('role') === 'option') el.setAttribute('aria-selected', on ? 'true' : 'false');
+      if (on && el.id) searchEl.setAttribute('aria-activedescendant', el.id);
+    });
+    if (searchIdx < 0) searchEl.removeAttribute('aria-activedescendant');
+  }
+  function closeSearchDrop() { searchDrop.hidden = true; searchEl.setAttribute('aria-expanded', 'false'); searchEl.removeAttribute('aria-activedescendant'); }
+  function gotoSearch(n) { closeSearchDrop(); searchEl.value = ''; focusNode(n); selectNode(n); }
   searchDrop.addEventListener('click', (e) => {
     const it = e.target.closest('[data-i]'); if (!it) return;
     gotoSearch(searchHits[+it.dataset.i]);

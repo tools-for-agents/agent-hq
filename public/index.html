@@ -61,8 +61,10 @@
         <canvas id="graph-canvas"></canvas>
 
         <div class="graph-hud gh-top">
-          <input id="graph-search" placeholder="find a memory, agent, tag…" autocomplete="off" />
-          <div class="graph-search-drop" id="graph-search-drop"></div>
+          <input id="graph-search" placeholder="find a memory, agent, tag…" autocomplete="off"
+                 role="combobox" aria-expanded="false" aria-controls="graph-search-drop"
+                 aria-autocomplete="list" aria-label="Find a memory, agent or tag" />
+          <div class="graph-search-drop" id="graph-search-drop" role="listbox" aria-label="Graph search results"></div>
         </div>
 
         <div class="graph-legend" id="graph-legend"></div>
@@ -73,7 +75,10 @@
           <button id="gc-png" title="Download as PNG">⤓ PNG</button>
         </div>
 
-        <div class="graph-filterpill" id="graph-filterpill" hidden></div>
+        <!-- A real <button>: pressing it clears the filter, so it is a control, not a label.
+             As a div it was mouse-only — you could see the graph was filtered and had no way
+             to unfilter it from a keyboard. -->
+        <button class="graph-filterpill" id="graph-filterpill" type="button" hidden></button>
         <div class="graph-tooltip" id="graph-tooltip" hidden></div>
 
         <aside class="graph-panel" id="graph-panel" hidden>

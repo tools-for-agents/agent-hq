@@ -328,11 +328,16 @@ main { grid-area: main; overflow: auto; padding: 16px 24px; }
 .graph-controls button:hover { border-color: var(--accent); background: var(--panel-2); }
 
 /* isolate pill */
+/* A <button>, so it says all of the UA sheet out loud: font does not inherit, text centres,
+   and Chrome hands any button that stays quiet `1px 6px` of padding — which is exactly how
+   three close buttons in this file landed 6px off the grid (C171). */
 .graph-filterpill {
   position: absolute; z-index: 3; left: 50%; transform: translateX(-50%); top: 14px;
   background: rgba(167,139,250,.16); border: 1px solid var(--accent-2); color: var(--txt);
   border-radius: 999px; padding: 8px 12px; font-size: 12px; cursor: pointer; box-shadow: var(--shadow);
+  font-family: inherit; line-height: inherit; -webkit-appearance: none; appearance: none;
 }
+.graph-filterpill:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
 .graph-filterpill .fp-x { margin-left: 8px; color: var(--muted); }
 .graph-filterpill:hover .fp-x { color: var(--txt); }
 
@@ -372,9 +377,19 @@ main { grid-area: main; overflow: auto; padding: 16px 24px; }
 .gp-sect { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .7px; margin: 16px 0 8px; }
 .gp-chips { display: flex; gap: 8px; flex-wrap: wrap; }
 .gp-chips.col { flex-direction: column; align-items: flex-start; }
+/* 🔑 DO NOT SIT EXACTLY ON AN ACCESSIBILITY THRESHOLD. At `padding: 4px` this chip measured
+   24.000px against a 24px minimum — compliant by nothing at all. iris flagged it `[high]` in
+   roughly one run of three with the page provably identical (0 DOM mutations, h=24 across 52
+   rAF samples; the panel's gp-in animation, the hover transform and float error each ruled
+   out — the cause is still unknown, and the flake survives waiting for every animation).
+   Whatever the last subpixel is doing, a control whose compliance depends on it is a coin
+   toss, and a gate cannot be built on a coin toss. 8px is the next step on the declared 4px
+   grid, puts the target at 32px — comfortably tappable rather than technically legal — and
+   the question stops being interesting. The iris flake is real and is being chased on its
+   own; this is not a workaround for it, it is a better button. */
 .gp-chip {
   display: inline-flex; align-items: center; max-width: 100%; background: var(--panel-2); border: 1px solid var(--line);
-  color: var(--txt); border-radius: 8px; padding: 4px 8px; font-size: 12px; cursor: pointer; text-align: left;
+  color: var(--txt); border-radius: 8px; padding: 8px; font-size: 12px; cursor: pointer; text-align: left;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: border-color .12s, transform .08s;
 }
 .gp-chip:hover { transform: translateY(-1px); }

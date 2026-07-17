@@ -236,6 +236,74 @@ jobs:
           pre: >-
             const until=async(f,ms=9000)=>{const t=Date.now()+ms;while(Date.now()<t){if(f())return true;await new Promise(r=>setTimeout(r,50));}throw new Error('timed out waiting for the new-task modal to arrive');};await until(()=>document.querySelectorAll('.tab').length>0);document.getElementById('newTaskBtn').click();await until(()=>document.getElementById('nt-title'));
 
+  # ── THE GRAPH'S THREE SHUT DOORS ──────────────────────────────────────────────
+  #
+  # Half this app's hover surface lives behind buttons no gate presses (C171). The graph held
+  # three of those doors, and they stayed shut because the panel opens by CLICKING A NODE ON A
+  # CANVAS — there is no selector to press. `window.HQGraph.debug()` hands back page-space node
+  # centres ("used by tests/automation" — it was built for exactly this and nothing used it), so
+  # a real PointerEvent at a real node opens the real panel. From there: a tag node's [data-filter]
+  # raises the filter pill, and typing in #graph-search opens the search dropdown.
+  #
+  # Behind them: the pill was a mouse-only div (you could see the graph was filtered and had no
+  # way to unfilter it from a keyboard), and the search dropdown's 8 rows were unannounced —
+  # ↑/↓/Enter drove a selection no screen reader was told about. Both fixed.
+  #
+  # 🔑 WAIT FOR THE ANIMATIONS, OR AUDIT A LIE. The panel fades in over 180ms (gp-in). Auditing
+  # while it played measured the text at ~77% opacity — iris reported `contrast 4.49:1`, then
+  # `4.09`, then `4.17` for the SAME element on identical runs, because it was reading a
+  # different frame of the fade each time. Not one of those colours exists on screen for longer
+  # than a fifth of a second. `getAnimations()` + `.finished` makes the state deterministic;
+  # without it this gate reports a different page every run.
+  look-graph:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Serve it, THEN seed it — an empty graph has no node to click
+        run: |
+          PORT=7700 node src/server.js &
+          for i in $(seq 30); do curl -sf http://localhost:7700/api/health >/dev/null && break; sleep 1; done
+          HQ_URL=http://localhost:7700 npm run seed
+          n=$(curl -sf "http://localhost:7700/api/graph" | node -pe "JSON.parse(require('fs').readFileSync(0)).nodes.length ?? 0")
+          echo "graph nodes: $n"
+          test "$n" -gt 0 || { echo "::error::the graph is empty — there would be no node to open"; exit 1; }
+      - uses: tools-for-agents/iris@main
+        with:
+          url: http://localhost:7700/
+          viewports: phone,tablet,desktop
+          name: hq-graph
+          tokens: kit
+          strict: true
+          hover: '.gp-chip, .gp-close, .gsd-item, .graph-filterpill, .gp-filterbtn'
+          pre: |
+            const until = async (f, ms = 9000, what = '') => { const t = Date.now() + ms; while (Date.now() < t) { const v = f(); if (v) return v; await new Promise((r) => setTimeout(r, 50)); } throw new Error('timed out waiting for ' + what); };
+            await until(() => document.querySelectorAll('.tab').length > 0, 9000, 'the tabs');
+            [...document.querySelectorAll('.tab')].find((t) => /graph/i.test(t.textContent)).click();
+            await until(() => window.HQGraph, 9000, 'HQGraph');
+            const nodes = await until(() => { const n = window.HQGraph.debug(); return n.length ? n : null; }, 9000, 'graph nodes');
+            const cvs = document.querySelector('.graph-wrap canvas');
+            const tag = nodes.find((x) => x.type === 'tag');
+            if (!tag) throw new Error('no tag node — the filter pill is only reachable from one');
+            const o = { bubbles: true, clientX: tag.px, clientY: tag.py, pointerId: 1, isPrimary: true, button: 0 };
+            cvs.dispatchEvent(new PointerEvent('pointerdown', o)); cvs.dispatchEvent(new PointerEvent('pointerup', o));
+            await until(() => !document.getElementById('graph-panel').hidden, 9000, 'the detail panel');
+            const fb = document.querySelector('#gp-body [data-filter]');
+            if (!fb) throw new Error('a tag panel with no filter button');
+            fb.click();
+            await until(() => !document.getElementById('graph-filterpill').hidden, 9000, 'the filter pill');
+            const s = document.getElementById('graph-search');
+            s.focus(); s.value = 'a'; s.dispatchEvent(new Event('input', { bubbles: true }));
+            const rows = await until(() => { const r = [...document.querySelectorAll('.gsd-item')]; return r.length > 1 ? r : null; }, 9000, 'the graph search dropdown');
+            if (s.getAttribute('aria-expanded') !== 'true') throw new Error('the open dropdown does not announce aria-expanded');
+            s.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
+            if (!rows[0].classList.contains('sel')) throw new Error('ArrowDown did not move the highlight');
+            if (s.getAttribute('aria-activedescendant') !== rows[0].id) throw new Error('ArrowDown moved the highlight but not the announcement — they are the same fact');
+            if (rows[0].getAttribute('aria-selected') !== 'true') throw new Error('aria-selected did not follow the selection');
+            await Promise.all(document.getAnimations().map((a) => a.finished.catch(() => {})));
+
   # ── THE STATES NOTHING EVER RENDERED ──────────────────────────────────────────
   # `test` proves the logic. `look` renders the page WORKING. `first-run` renders it
   # EMPTY. Not one of them has ever rendered a control that cannot be pressed, or a row
