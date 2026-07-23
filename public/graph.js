@@ -17,19 +17,25 @@
   const searchDrop = document.getElementById('graph-search-drop');
   const filterPill = document.getElementById('graph-filterpill');
 
-  // ── Theme colors (pulled from the dashboard's CSS variables) ───────────────
-  const css = getComputedStyle(document.documentElement);
-  const c = (v, fb) => (css.getPropertyValue(v).trim() || fb);
-  const COL = {
-    memory: c('--accent', '#6ea8fe'),
-    agent: c('--accent-2', '#a78bfa'),
-    namespace: c('--green', '#4ade80'),
-    tag: c('--amber', '#fbbf24'),
-    line: c('--line', '#232b3d'),
-    txt: c('--txt', '#e6ebf5'),
-    muted: c('--muted', '#8a96ad'),
-    bg: c('--bg', '#0b0e14'),
+  // ── Theme colors (pulled live from the dashboard's CSS variables) ──────────
+  // Re-read on theme toggle via HQGraph.recolor(): the neutrals (txt/muted/line/
+  // bg) must follow light ↔ dark, or near-white node labels would sit invisibly
+  // on a light graph. The four type accents read the same in both themes.
+  const readCOL = () => {
+    const css = getComputedStyle(document.documentElement);
+    const c = (v, fb) => (css.getPropertyValue(v).trim() || fb);
+    return {
+      memory: c('--accent', '#6ea8fe'),
+      agent: c('--accent-2', '#a78bfa'),
+      namespace: c('--green', '#4ade80'),
+      tag: c('--amber', '#fbbf24'),
+      line: c('--line', '#232b3d'),
+      txt: c('--txt', '#e6ebf5'),
+      muted: c('--muted', '#8a96ad'),
+      bg: c('--bg', '#0b0e14'),
+    };
   };
+  let COL = readCOL();
   const TYPES = [
     { key: 'memory', label: 'memories', icon: '🧠' },
     { key: 'agent', label: 'agents', icon: '🤖' },
@@ -568,6 +574,9 @@
       start();
     },
     deactivate() { active = false; running = false; cancelAnimationFrame(rafId); tip.hidden = true; },
+    // theme toggled: re-read the CSS-var palette and repaint so the graph's
+    // neutrals track light ↔ dark (the legend/panel are DOM and track on their own).
+    recolor() { COL = readCOL(); if (active) draw(); },
     // live SSE refresh — keep positions so the graph morphs instead of jumping
     refresh() { if (active) load(true); else everLaidOut = false; },
     // read-only introspection: page-space node centers (used by tests/automation)

@@ -192,6 +192,18 @@ function activateTab(view) {
 }
 document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => activateTab(t.dataset.view)));
 
+// ── Theme toggle ── the saved theme is applied pre-paint by the inline <head>
+// script; this only flips + persists it, and nudges the canvas graph to re-read
+// its palette (the rest of the UI is var-driven and follows on its own).
+$('#theme').addEventListener('click', () => {
+  const cur = document.documentElement.getAttribute('data-theme');
+  const dark = cur ? cur === 'dark' : !matchMedia('(prefers-color-scheme: light)').matches;
+  const next = dark ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  try { localStorage.setItem('agent-hq:theme', next); } catch (e) {}
+  window.HQGraph?.recolor();
+});
+
 // ── Renderers ───────────────────────────────────────────────────────────
 async function renderStats() {
   const s = await api('/stats');

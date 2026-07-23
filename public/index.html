@@ -6,6 +6,8 @@
   <title>Agent HQ · tools-for-agents</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛰️</text></svg>" />
   <link rel="stylesheet" href="/styles.css" />
+  <!-- Restore the saved theme BEFORE first paint so a light-mode user never sees a dark flash. -->
+  <script>try{var t=localStorage.getItem('agent-hq:theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
 </head>
 <body>
   <header class="topbar">
@@ -17,6 +19,7 @@
       </div>
     </div>
     <div class="stats" id="stats"></div>
+    <button class="theme-btn" id="theme" title="Toggle light / dark" aria-label="Toggle theme">◐</button>
     <div class="conn" id="conn"><span class="dot"></span><span id="conn-label">connecting…</span></div>
   </header>
 

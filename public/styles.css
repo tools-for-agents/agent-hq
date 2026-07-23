@@ -425,7 +425,7 @@ main { grid-area: main; overflow: auto; padding: 16px 24px; }
 
 
 /* cross-tool footer — this is one of tools-for-agents' six web views */
-.xtk{position:fixed;left:50%;bottom:0;transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap: 12px;max-width:96vw;overflow-x:auto;padding: 4px 16px;border:1px solid rgba(255,255,255,.1);border-bottom:none;border-radius: 12px 12px 0 0;background:rgba(12,13,17,.82);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size: 12px;line-height:1;white-space:nowrap;scrollbar-width:none;}
+.xtk{position:fixed;left:50%;bottom:0;transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap: 12px;max-width:96vw;overflow-x:auto;padding: 4px 16px;border:1px solid rgba(255,255,255,.1);border-bottom:none;border-radius: 12px 12px 0 0;background:rgba(12,13,17,.94);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size: 12px;line-height:1;white-space:nowrap;scrollbar-width:none;}
 .xtk::-webkit-scrollbar{display:none;}
 
 .xtk .xtk-l{color:#a9b0bd;letter-spacing:.3px;padding: 8px 0;}
@@ -563,4 +563,81 @@ main { grid-area: main; overflow: auto; padding: 16px 24px; }
   .feed li.flash { animation: none; }
   .graph-panel { animation: none; }
   .card, .agent, .gp-chip, .ag-row, .graph-filterpill { transition: none; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   LIGHT THEME — parity with the kit's other dashboards (cortex/lens/recall/
+   scout all ship one). agent-hq's palette is neutral blue/purple, so a day
+   theme fits it — unlike hangar's terminals or anvil's forge, which are dark by
+   concept. Two triggers: the ◐ button (data-theme) and the OS preference; kept
+   in two places, like recall, because CSS cannot alias one selector under both.
+   Accents are DARKENED so they stay AA on a light ground, and the canvas graph
+   re-reads these vars via HQGraph.recolor() on toggle.
+   ══════════════════════════════════════════════════════════════════════════ */
+.theme-btn { flex: 0 0 auto; background: var(--panel); border: 1px solid var(--line); color: var(--muted); width: 34px; height: 34px; border-radius: 8px; cursor: pointer; font-size: 14px; display: grid; place-items: center; transition: color .12s, border-color .12s; }
+.theme-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+:root[data-theme="light"] {
+  --bg: #f5f7fb; --panel: #ffffff; --panel-2: #eef1f7; --line: #dfe3ee;
+  --txt: #171a24; --muted: #5b6376;
+  --accent: #1d4ed8; --accent-2: #6d28d9;
+  --green: #16a34a; --amber: #b45309; --red: #dc2626;
+  --shadow: 0 6px 24px rgba(30, 41, 80, .12);
+}
+:root[data-theme="light"] body { background: radial-gradient(1200px 600px at 80% -10%, #dbe4fb 0%, var(--bg) 55%) fixed; }
+:root[data-theme="light"] .topbar { background: rgba(255, 255, 255, .72); }
+:root[data-theme="light"] .ticker { background: rgba(255, 255, 255, .55); }
+:root[data-theme="light"] #graph-search { background: rgba(255, 255, 255, .9); }
+:root[data-theme="light"] .graph-search-drop { background: rgba(255, 255, 255, .96); }
+:root[data-theme="light"] .gl-item,
+:root[data-theme="light"] .graph-controls button { background: rgba(255, 255, 255, .82); }
+:root[data-theme="light"] .graph-tooltip { background: rgba(255, 255, 255, .95); }
+:root[data-theme="light"] .graph-panel { background: rgba(255, 255, 255, .96); }
+/* the cross-tool footer stays DARK in both themes: it is shared floating chrome, and its
+   links are each tool's identity colour, tuned for a dark strip — a dark pill on a light
+   page reads as a deliberate toolbar and keeps those eight colours legible. */
+/* the accent goes darker in light, so a button's once-dark label must go white */
+:root[data-theme="light"] .compose-send,
+:root[data-theme="light"] .new-task,
+:root[data-theme="light"] .nt-go { color: #fff; }
+/* semantic text colours were picked light for a dark ground; darken to stay AA on white */
+:root[data-theme="light"] .ftile.good b,
+:root[data-theme="light"] .afl.good b { color: #15803d; }
+:root[data-theme="light"] .ftile.warn b,
+:root[data-theme="light"] .afl.warn b,
+:root[data-theme="light"] .column h3 .count.at { color: #b45309; }
+:root[data-theme="light"] .column h3 .count.over,
+:root[data-theme="light"] .column h3 .wip-flag,
+:root[data-theme="light"] .card .chip.blocked { color: #dc2626; }
+:root[data-theme="light"] .nt-err { color: #b91c1c; }
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f5f7fb; --panel: #ffffff; --panel-2: #eef1f7; --line: #dfe3ee;
+    --txt: #171a24; --muted: #5b6376;
+    --accent: #1d4ed8; --accent-2: #6d28d9;
+    --green: #16a34a; --amber: #b45309; --red: #dc2626;
+    --shadow: 0 6px 24px rgba(30, 41, 80, .12);
+  }
+  :root:not([data-theme="dark"]) body { background: radial-gradient(1200px 600px at 80% -10%, #dbe4fb 0%, var(--bg) 55%) fixed; }
+  :root:not([data-theme="dark"]) .topbar { background: rgba(255, 255, 255, .72); }
+  :root:not([data-theme="dark"]) .ticker { background: rgba(255, 255, 255, .55); }
+  :root:not([data-theme="dark"]) #graph-search { background: rgba(255, 255, 255, .9); }
+  :root:not([data-theme="dark"]) .graph-search-drop { background: rgba(255, 255, 255, .96); }
+  :root:not([data-theme="dark"]) .gl-item,
+  :root:not([data-theme="dark"]) .graph-controls button { background: rgba(255, 255, 255, .82); }
+  :root:not([data-theme="dark"]) .graph-tooltip { background: rgba(255, 255, 255, .95); }
+  :root:not([data-theme="dark"]) .graph-panel { background: rgba(255, 255, 255, .96); }
+  :root:not([data-theme="dark"]) .compose-send,
+  :root:not([data-theme="dark"]) .new-task,
+  :root:not([data-theme="dark"]) .nt-go { color: #fff; }
+  :root:not([data-theme="dark"]) .ftile.good b,
+  :root:not([data-theme="dark"]) .afl.good b { color: #15803d; }
+  :root:not([data-theme="dark"]) .ftile.warn b,
+  :root:not([data-theme="dark"]) .afl.warn b,
+  :root:not([data-theme="dark"]) .column h3 .count.at { color: #b45309; }
+  :root:not([data-theme="dark"]) .column h3 .count.over,
+  :root:not([data-theme="dark"]) .column h3 .wip-flag,
+  :root:not([data-theme="dark"]) .card .chip.blocked { color: #dc2626; }
+  :root:not([data-theme="dark"]) .nt-err { color: #b91c1c; }
 }
