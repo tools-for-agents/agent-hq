@@ -574,14 +574,16 @@ main { grid-area: main; overflow: auto; padding: 16px 24px; }
    Accents are DARKENED so they stay AA on a light ground, and the canvas graph
    re-reads these vars via HQGraph.recolor() on toggle.
    ══════════════════════════════════════════════════════════════════════════ */
-.theme-btn { flex: 0 0 auto; background: var(--panel); border: 1px solid var(--line); color: var(--muted); width: 34px; height: 34px; border-radius: 8px; cursor: pointer; font-size: 14px; display: grid; place-items: center; transition: color .12s, border-color .12s; }
+/* padding:0 on purpose: a bare <button> gets Chrome's 1px 6px, and 6px is off the 4px
+   grid — the same trap that put three close buttons off-grid in this file (see C171). */
+.theme-btn { flex: 0 0 auto; padding: 0; background: var(--panel); border: 1px solid var(--line); color: var(--muted); width: 32px; height: 32px; border-radius: 8px; cursor: pointer; font-size: 14px; display: grid; place-items: center; transition: color .12s, border-color .12s; }
 .theme-btn:hover { color: var(--accent); border-color: var(--accent); }
 
 :root[data-theme="light"] {
   --bg: #f5f7fb; --panel: #ffffff; --panel-2: #eef1f7; --line: #dfe3ee;
   --txt: #171a24; --muted: #5b6376;
   --accent: #1d4ed8; --accent-2: #6d28d9;
-  --green: #16a34a; --amber: #b45309; --red: #dc2626;
+  --green: #15803d; --amber: #b45309; --red: #b91c1c;
   --shadow: 0 6px 24px rgba(30, 41, 80, .12);
 }
 :root[data-theme="light"] body { background: radial-gradient(1200px 600px at 80% -10%, #dbe4fb 0%, var(--bg) 55%) fixed; }
@@ -604,11 +606,16 @@ main { grid-area: main; overflow: auto; padding: 16px 24px; }
 :root[data-theme="light"] .ftile.good b,
 :root[data-theme="light"] .afl.good b { color: #15803d; }
 :root[data-theme="light"] .ftile.warn b,
-:root[data-theme="light"] .afl.warn b,
-:root[data-theme="light"] .column h3 .count.at { color: #b45309; }
+:root[data-theme="light"] .afl.warn b { color: #b45309; }
+:root[data-theme="light"] .column h3 .wip-flag { color: #dc2626; }
+/* semantic text that sits on its OWN same-hue tint needs one shade darker still —
+   the wash lowers the effective contrast below AA that the plain colour clears. */
+:root[data-theme="light"] .column h3 .count.at,
+:root[data-theme="light"] .card .chip.frees,
+:root[data-theme="light"] .ag-row .ag-imp,
+:root[data-theme="light"] .gp-chip.gp-tag { color: #92400e; }
 :root[data-theme="light"] .column h3 .count.over,
-:root[data-theme="light"] .column h3 .wip-flag,
-:root[data-theme="light"] .card .chip.blocked { color: #dc2626; }
+:root[data-theme="light"] .card .chip.blocked,
 :root[data-theme="light"] .nt-err { color: #b91c1c; }
 
 @media (prefers-color-scheme: light) {
@@ -616,7 +623,7 @@ main { grid-area: main; overflow: auto; padding: 16px 24px; }
     --bg: #f5f7fb; --panel: #ffffff; --panel-2: #eef1f7; --line: #dfe3ee;
     --txt: #171a24; --muted: #5b6376;
     --accent: #1d4ed8; --accent-2: #6d28d9;
-    --green: #16a34a; --amber: #b45309; --red: #dc2626;
+    --green: #15803d; --amber: #b45309; --red: #b91c1c;
     --shadow: 0 6px 24px rgba(30, 41, 80, .12);
   }
   :root:not([data-theme="dark"]) body { background: radial-gradient(1200px 600px at 80% -10%, #dbe4fb 0%, var(--bg) 55%) fixed; }
@@ -634,10 +641,13 @@ main { grid-area: main; overflow: auto; padding: 16px 24px; }
   :root:not([data-theme="dark"]) .ftile.good b,
   :root:not([data-theme="dark"]) .afl.good b { color: #15803d; }
   :root:not([data-theme="dark"]) .ftile.warn b,
-  :root:not([data-theme="dark"]) .afl.warn b,
-  :root:not([data-theme="dark"]) .column h3 .count.at { color: #b45309; }
+  :root:not([data-theme="dark"]) .afl.warn b { color: #b45309; }
+  :root:not([data-theme="dark"]) .column h3 .wip-flag { color: #dc2626; }
+  :root:not([data-theme="dark"]) .column h3 .count.at,
+  :root:not([data-theme="dark"]) .card .chip.frees,
+  :root:not([data-theme="dark"]) .ag-row .ag-imp,
+  :root:not([data-theme="dark"]) .gp-chip.gp-tag { color: #92400e; }
   :root:not([data-theme="dark"]) .column h3 .count.over,
-  :root:not([data-theme="dark"]) .column h3 .wip-flag,
-  :root:not([data-theme="dark"]) .card .chip.blocked { color: #dc2626; }
+  :root:not([data-theme="dark"]) .card .chip.blocked,
   :root:not([data-theme="dark"]) .nt-err { color: #b91c1c; }
 }
