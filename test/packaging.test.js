@@ -14,7 +14,7 @@
 // This file is the net under that.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
@@ -68,3 +68,43 @@ for (const [name, rel] of bins) {
       + `\`git update-index --chmod=+x ${rel}\` and commit.`);
   });
 }
+
+// A sibling directory the shipped code reaches for at runtime — `join(__dir, '..', 'public')` —
+// has to be in `files`, or the PUBLISHED package is missing it while the repo checkout looks
+// perfect. Nothing else can see that gap: every test, every local run and every CI job works
+// from the checkout, and only `npm pack` builds the thing users actually install.
+//
+// prism shipped exactly this: src/server.js served `../public`, `files` listed
+// ["src","mcp","README.md","LICENSE"], and the published package was a web server with no web UI.
+// The other seven repos listed "public" — the drift was invisible because a `files` array is
+// prose about the repo that nothing reads back.
+//
+// The wanted set is parsed out of the code itself, so a new asset directory is covered the day
+// it is referenced rather than the day someone remembers this test exists.
+const sourceFiles = [];
+for (const dir of ['src', 'mcp', 'scripts']) {
+  const abs = join(root, dir);
+  if (!existsSync(abs)) continue;
+  for (const e of readdirSync(abs, { withFileTypes: true, recursive: true })) {
+    if (e.isFile() && /\.(js|mjs)$/.test(e.name)) sourceFiles.push(join(e.parentPath ?? abs, e.name));
+  }
+}
+
+test('the runtime-asset scan actually read this package\'s source', () => {
+  assert.ok(sourceFiles.length > 0,
+    'found no source files under src/, mcp/ or scripts/ — the check below would pass by scanning nothing');
+});
+
+test('every sibling directory the code loads at runtime is in package.json files', () => {
+  if (!pkg.files) return; // no `files` array means the whole repo ships; nothing to omit.
+  const wanted = new Set();
+  for (const f of sourceFiles) {
+    for (const m of readFileSync(f, 'utf8').matchAll(/join\(\s*__dir(?:name)?\s*,\s*'\.\.'\s*,\s*'([^']+)'/g)) {
+      if (existsSync(join(root, m[1]))) wanted.add(m[1]);
+    }
+  }
+  const missing = [...wanted].filter((d) => !pkg.files.includes(d));
+  assert.deepEqual(missing, [],
+    `the published package would not contain ${missing.join(', ')}, but this package's own code `
+    + `loads ${missing.length === 1 ? 'it' : 'them'} at runtime — add to "files" in package.json`);
+});
