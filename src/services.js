@@ -35,6 +35,79 @@ const usableCost = (v) => (v != null && Number.isFinite(+v) && +v >= 0 ? +v : nu
 // id-or-name in, canonical id out — the contract Agents.get uses everywhere. Lenient: an unresolved value
 // passes through (a non-agent simply has no messages; send() throws separately on an unknown RECIPIENT).
 const agentId = (v) => (v == null ? v : (Agents.get(v)?.id ?? v));
+
+// 🔑 ONE IDENTITY, TWO SPELLINGS — AND IT WAS ONLY EVER FIXED FOR MESSAGES.
+// Every "who" column in this database — tasks.assignee, tasks.created_by, activity.actor,
+// comments.author, memories.agent_id, runs.agent_id — was written with whatever string the caller
+// used to name itself, and callers genuinely disagree: agent_register hands back a record carrying
+// BOTH an id and a name, the MCP schemas say "your agent id", the seed writes ids, a human picking
+// an assignee in the dashboard composer picks a name. Store the raw string and both spellings end
+// up on one board while every reader compares against ONE of them — so `kanban_list_tasks
+// {assignee:<my id>}` answered **[]** for an agent holding an active lease under its NAME,
+// `kanban_flow` reported `wip:0` for it, and the dashboard drew the card as unassigned while that
+// lease blocked everyone else from claiming it.
+//
+// That is worse than the typo the guards were written to catch. The guard below fires for "Forg"
+// and waves "Forge" through — the agent really IS registered — so the caller gets a clean `[]` from
+// a filter whose typo case throws a loud 400, and an empty answer next to a loud neighbour reads as
+// authoritative. A model then pulls a second task, and a third, each time still told it holds none.
+//
+// Closing it takes BOTH halves:
+//   WRITE — agentId() at every who-column write, so the board converges on the canonical id.
+//   READ  — matchWho() at every who-column filter, so one query answers for BOTH spellings.
+// The read half is not belt-and-braces: canonicalizing writes only heals rows written from now on,
+// and every board that has already run — every live instance, every seeded db — keeps its
+// name-spelled rows. A fix that leaves those lying is not a fix.
+const whoSpellings = (v) => {
+  const a = Agents.get(v);
+  if (!a) return [String(v)];
+  if (!a.name || a.name === a.id) return [a.id];
+  // The NAME counts as a spelling of THIS agent only if nothing else answers to it. `Agents.get`
+  // matches `id=? OR name=?`, so an agent whose NAME happens to be another agent's ID would
+  // otherwise drag that agent's rows in here — one ambiguous lookup amplified into a two-agent
+  // identity, and `list({assignee: mine})` handing back somebody else's card. Ambiguous spelling
+  // dropped, canonical id always kept: the answer can be short, never somebody else's.
+  const answersTo = all(`SELECT id FROM agents WHERE id=? OR name=?`, a.name, a.name);
+  return answersTo.length === 1 && answersTo[0].id === a.id ? [a.id, a.name] : [a.id];
+};
+// A `col IN (?,…)` fragment matching a who-column against every spelling of ONE identity.
+const matchWho = (col, v) => {
+  const args = whoSpellings(v);
+  return { sql: `${col} IN (${args.map(() => '?').join(',')})`, args };
+};
+
+// EVERY PLACE THIS DATABASE WRITES DOWN A "WHO" — one list, because "is this somebody?" must get
+// the SAME answer whichever reader asks it. Split the rule across readers and the board contradicts
+// itself: kanban_flow answered `wip:1` for a worker while kanban_list_tasks, about the same board in
+// the same breath, threw `no agent "w1" is registered`. One of those is a lie whichever way you read
+// it, and a model has no way to tell which. The pairs are literals from this file, never input.
+const WHO_COLUMNS = [
+  ['tasks', 'assignee'], ['tasks', 'created_by'], ['activity', 'actor'], ['comments', 'author'],
+  ['memories', 'agent_id'], ['runs', 'agent_id'], ['messages', 'from_agent'], ['messages', 'to_agent'],
+];
+const knownWho = (v) => !!Agents.get(v)
+  || WHO_COLUMNS.some(([t, c]) => !!get(`SELECT 1 AS n FROM ${t} WHERE ${c}=? LIMIT 1`, String(v)));
+// A filter naming somebody who is neither a registered agent NOR anywhere in this database is a
+// TYPO, not an answer — the same rule Tasks.list already enforced for columns, applied to the
+// readers that answered a misspelling with a confident row of zeros. It is "appears NOWHERE", not
+// "not registered", because registration is not a precondition for doing work: `Tasks.next('w1')`
+// stores 'w1', and 'w1' then has a real, non-empty answer that must not be thrown away. And it is
+// the WHOLE database rather than the columns this one reader happens to touch — an agent that holds
+// a task but has never been logged is still somebody, and refusing it here while flow answers for
+// it is the same confident error pointing the other way.
+// Only ever guards a filter that can SUBTRACT the whole answer: a query whose rows are not all
+// "theirs" (Memory.search, which always returns the org-wide pool) has no business refusing.
+function assertKnownWho(v, notThis) {
+  if (knownWho(v)) return;
+  const names = all(`SELECT name FROM agents ORDER BY name LIMIT 12`).map((r) => r.name);
+  // Name every column that was actually looked in. "Appears nowhere" is a big claim; a caller has to
+  // be able to check it, and a sentence that overstates what was searched is the same kind of
+  // confident wrong answer as the empty list this guard exists to prevent.
+  throw new Error(`no agent "${v}" is registered, and "${v}" appears nowhere on this board — not as `
+    + `a task's assignee or creator, an actor in the log, a comment or memory author, a message's `
+    + `sender or recipient, nor on a run — so this is NOT "${notThis}". `
+    + `Registered: ${names.join(', ') || 'nobody yet — call agent_register'}`);
+}
 // ≈4 chars/token — the same estimate every other tool in this kit uses, so the budgets mean the
 // same thing across them.
 const estTokens = (s) => Math.ceil(String(s || '').length / 4);
@@ -225,6 +298,7 @@ export const Boards = {
   // A WIP limit caps how many tasks may sit in a column at once — the whole point
   // of kanban: finish work before starting more. Pass null (or 0) to lift it.
   setWipLimit({ board_id, column, wip_limit, actor = null }) {
+    actor = agentId(actor);   // the activity feed filters by agent id
     const bid = board_id || Boards.ensureDefault().id;
     const col = columnByName(bid, column);
     if (!col) throw new Error('column not found');
@@ -259,7 +333,14 @@ export const Flow = {
     let sql = `SELECT ts, type, entity_id, summary, data FROM activity
                WHERE entity='task' AND type IN ('task.created','task.moved') AND ts >= ?`;
     const args = [since];
-    if (actor) { sql += ` AND actor = ?`; args.push(actor); }
+    if (actor) {
+      // Both spellings of one agent, or a loud error — a per-agent flow of all zeros is exactly the
+      // answer a misspelled actor produced, and the README sells this tile as the alarm for work
+      // parked where nobody can pick it up.
+      assertKnownWho(actor, 'they did nothing');
+      const w = matchWho('actor', actor);
+      sql += ` AND ${w.sql}`; args.push(...w.args);
+    }
     const acts = all(sql + ` ORDER BY ts, id`, ...args);
 
     // Did this move finish the task? Prefer the structured data we now record;
@@ -303,9 +384,10 @@ export const Flow = {
 
     // In flight = what is still open. For an agent, that means what is assigned to
     // them — not what they touched.
-    const wip = actor
+    const held = actor ? matchWho('t.assignee', actor) : null;
+    const wip = held
       ? get(`SELECT COUNT(*) AS n FROM tasks t JOIN columns c ON c.id=t.column_id
-             WHERE lower(c.name) != 'done' AND t.assignee = ?`, actor).n
+             WHERE lower(c.name) != 'done' AND ${held.sql}`, ...held.args).n
       : get(`SELECT COUNT(*) AS n FROM tasks t JOIN columns c ON c.id=t.column_id
              WHERE lower(c.name) != 'done'`).n;
 
@@ -405,18 +487,19 @@ export const Tasks = {
           + `The columns are: ${known.join(', ')}`);
       }
     }
-    if (assignee) {
-      const who = get(`SELECT id FROM agents WHERE id=? OR name=?`, assignee, assignee);
-      if (!who) {
-        const names = all(`SELECT name FROM agents ORDER BY name LIMIT 12`).map((r) => r.name);
-        throw new Error(`no agent "${assignee}" is registered — this is NOT "they have no tasks". `
-          + `Registered: ${names.join(', ') || 'nobody yet — call agent_register'}`);
-      }
-    }
+    // Registration is not what makes somebody real here — holding a task is. This guard used to
+    // refuse anyone unregistered, so a board where `Tasks.next('w1')` or
+    // `create({assignee:'ghost-runner'})` had put real work in real hands answered "no agent "w1" is
+    // registered" to the one tool whose whole job is "what is w1 holding?", while kanban_flow
+    // answered `wip:1` for the same string. Same rule as every other who-filter now.
+    if (assignee) assertKnownWho(assignee, 'they have no tasks');
     let sql = `SELECT t.*, c.name AS column_name FROM tasks t JOIN columns c ON c.id=t.column_id WHERE 1=1`;
     const args = [];
     if (board_id) { sql += ` AND t.board_id=?`; args.push(board_id); }
-    if (assignee) { sql += ` AND t.assignee=?`; args.push(assignee); }
+    // The guard above already resolved this agent and then threw the resolution away, so a board
+    // holding "Forge" answered [] to its own id. Match every spelling of the identity, not the
+    // string the caller happened to type.
+    if (assignee) { const w = matchWho('t.assignee', assignee); sql += ` AND ${w.sql}`; args.push(...w.args); }
     if (status) { sql += ` AND lower(c.name)=lower(?)`; args.push(status); }
     sql += ` ORDER BY t.position, t.created_at, t.id`;
     return all(sql, ...args).map((t) => preview(parse(t, 'labels')));
@@ -425,6 +508,7 @@ export const Tasks = {
   create({ board_id, column, title, description = '', assignee = null, priority = 'medium', labels = [], created_by = null, force = false }) {
     assertPriority(priority);
     assertLabels(labels);
+    assignee = agentId(assignee); created_by = agentId(created_by);   // one identity, one spelling — see agentId
     const board = board_id ? get(`SELECT * FROM boards WHERE id=?`, board_id) : Boards.ensureDefault();
     const bid = board.id;
     // Asking for a column that does not exist used to drop the task quietly into the FIRST
@@ -457,6 +541,10 @@ export const Tasks = {
     if (!t) throw new Error('task not found');
     assertPriority(patch.priority);   // undefined (not patched) is fine; a bad value is not
     assertLabels(patch.labels);
+    actor = agentId(actor);
+    // Reassigning by name wrote a name — the same split the claim path had. `in` not `??`, so
+    // clearing the assignee (null) still clears it.
+    if ('assignee' in patch) patch = { ...patch, assignee: agentId(patch.assignee) };
     const fields = { title: t.title, description: t.description, assignee: t.assignee, priority: t.priority };
     let columnChange = null, moveData = null;
 
@@ -496,6 +584,7 @@ export const Tasks = {
   comment(id, { author, body }) {
     const t = get(`SELECT * FROM tasks WHERE id=?`, id);
     if (!t) throw new Error('task not found');
+    author = agentId(author);   // the dashboard looks a comment's author up by id
     const cid = uid('cmt_');
     run(`INSERT INTO comments (id,task_id,author,body,created_at) VALUES (?,?,?,?,?)`,
       cid, id, author, body, now());
@@ -543,6 +632,12 @@ export const Tasks = {
   // agents from grabbing the same work.
   claim(id, agent, lease_ms = 600_000) {
     if (!agent) throw new Error('agent required to claim');
+    // 🔑 THE WRITE THAT SPLIT THE BOARD. Whatever the agent called itself was stored verbatim, so a
+    // claim by NAME was invisible to every reader that matches on the id — kanban_list_tasks,
+    // kanban_flow's wip, the dashboard's assignee chip. Canonicalize here and the board has one
+    // spelling of "who"; an unregistered worker ('w1', a racer in the stampede test) passes through
+    // untouched, because a claim must never depend on having registered first.
+    agent = agentId(agent);
     const t = get(`SELECT * FROM tasks WHERE id=?`, id);
     if (!t) throw new Error('task not found');
     const ts = now();
@@ -550,10 +645,14 @@ export const Tasks = {
     // never throw "Invalid time value". The 30s floor below still protects legit small leases.
     const lease = posInt(lease_ms, 600_000, MAX_LEASE_MS);
     const until = new Date(Date.now() + Math.max(30_000, lease)).toISOString();
+    // "already held by this agent" has to recognise a lease this same agent took under its OTHER
+    // spelling — on a board written before this fix, refreshing your own lease from the id would
+    // otherwise come back `already claimed, held_by: "Forge"`, i.e. blocked by yourself.
+    const mine = matchWho('assignee', agent);
     const r = run(
       `UPDATE tasks SET assignee=?, claimed_at=?, lease_until=?, updated_at=?
-       WHERE id=? AND (assignee IS NULL OR assignee='' OR assignee=? OR lease_until IS NULL OR lease_until < ?)`,
-      agent, ts, until, ts, id, agent, ts);
+       WHERE id=? AND (assignee IS NULL OR assignee='' OR ${mine.sql} OR lease_until IS NULL OR lease_until < ?)`,
+      agent, ts, until, ts, id, ...mine.args, ts);
     if (r.changes === 0) {
       return { ok: false, reason: 'already claimed', held_by: t.assignee, lease_until: t.lease_until };
     }
@@ -565,8 +664,12 @@ export const Tasks = {
   release(id, agent) {
     const t = get(`SELECT * FROM tasks WHERE id=?`, id);
     if (!t) throw new Error('task not found');
+    agent = agentId(agent);
+    // Match both spellings, or an agent that claimed by name and releases by id is told ok:false
+    // while its lease keeps the task locked — a refusal that reads as "it wasn't yours".
+    const mine = matchWho('assignee', agent || '');
     const r = run(`UPDATE tasks SET assignee=NULL, claimed_at=NULL, lease_until=NULL, updated_at=?
-                   WHERE id=? AND (assignee=? OR ?='')`, now(), id, agent, agent || '');
+                   WHERE id=? AND (${mine.sql} OR ?='')`, now(), id, ...mine.args, agent || '');
     if (r.changes) emit(logActivity({ actor: agent, type: 'task.released', entity: 'task', entity_id: id,
       summary: `🔓 released "${t.title}"` }));
     return { ok: r.changes > 0 };
@@ -595,6 +698,7 @@ export const Tasks = {
   },
 
   remove(id, actor = null) {
+    actor = agentId(actor);
     const t = get(`SELECT * FROM tasks WHERE id=?`, id);
     if (!t) return { ok: false };
     run(`DELETE FROM tasks WHERE id=?`, id);
@@ -607,6 +711,7 @@ export const Tasks = {
 // ── Memory ─────────────────────────────────────────────────────────────────
 export const Memory = {
   write({ agent_id = null, namespace = 'default', title, content, tags = [], importance = 3 }) {
+    agent_id = agentId(agent_id);   // the graph draws the "authored" edge by id; a name-authored memory had no author
     const id = uid('mem_');
     run(`INSERT INTO memories (id,agent_id,namespace,title,content,tags,importance,created_at,updated_at)
          VALUES (?,?,?,?,?,?,?,?,?)`,
@@ -645,7 +750,18 @@ export const Memory = {
     let sql = `SELECT * FROM memories WHERE 1=1`;
     const args = [];
     if (q) { const p = `%${likeEsc(q)}%`; sql += ` AND (title LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\')`; args.push(p, p); }
-    if (agent_id) { sql += ` AND (agent_id=? OR agent_id IS NULL)`; args.push(agent_id); }
+    // Both spellings: an agent searching its own memories by id must see what it wrote under its
+    // name. But NO who-guard here, deliberately — and this is the one filter in the file that must
+    // not have one. `agent_id` does not narrow this query to "theirs": it ADDS their private rows to
+    // the org-wide pool (`agent_id IS NULL`), which belongs to nobody and is most of the answer. So
+    // an unknown value cannot make the answer falsely empty, and refusing it withholds rows that
+    // were never theirs to be refused — a brand-new worker whose first act is
+    // `memory_search {agent_id:<me>, q:"deploy"}` would be told it does not exist instead of being
+    // handed the runbook. Guard the filters that SUBTRACT; answer the ones that ADD.
+    if (agent_id) {
+      const w = matchWho('agent_id', agent_id);
+      sql += ` AND (${w.sql} OR agent_id IS NULL)`; args.push(...w.args);
+    }
     if (namespace) { sql += ` AND namespace=?`; args.push(namespace); }
     if (tag) { sql += ` AND tags LIKE ? ESCAPE '\\'`; args.push(tagLike(tag)); }
     sql += ` ORDER BY importance DESC, updated_at DESC LIMIT ?`; args.push(posInt(limit, 25, 200));
@@ -772,6 +888,9 @@ export const Messages = {
 // company's economics are observable. Prices come from src/pricing.js.
 export const Ledger = {
   start({ agent_id = null, task_id = null, label = 'run', model = null, meta = null }) {
+    // A run started by NAME never flipped its agent to 'working' (the lookup below is by id) and
+    // landed in the ledger as its own unattributed row next to the same agent's id-spelled runs.
+    agent_id = agentId(agent_id);
     const id = uid('run_');
     run(`INSERT INTO runs (id,agent_id,task_id,label,model,status,started_at,meta)
          VALUES (?,?,?,?,?,'running',?,?)`,
@@ -808,6 +927,7 @@ export const Ledger = {
   record({ agent_id = null, task_id = null, label = 'run', model = null,
     input_tokens = 0, output_tokens = 0, cost_usd, duration_ms = 0, status = 'done', meta = null }) {
     assertEnum('run status', status, RUN_STATUSES);
+    agent_id = agentId(agent_id);   // same spelling as every other who-column — see agentId
     const id = uid('run_');
     input_tokens = tokenCount(input_tokens);
     output_tokens = tokenCount(output_tokens);
@@ -827,11 +947,35 @@ export const Ledger = {
   summary() {
     const totals = get(`SELECT COUNT(*) runs, COALESCE(SUM(input_tokens),0) input_tokens,
         COALESCE(SUM(output_tokens),0) output_tokens, COALESCE(SUM(cost_usd),0) cost_usd FROM runs`);
-    const byAgent = all(`SELECT r.agent_id, a.name, a.avatar,
-        COUNT(*) runs, COALESCE(SUM(r.input_tokens),0) input_tokens,
+    // ONE AGENT IS ONE ROW — and every run is counted EXACTLY ONCE. Runs written under a name (before
+    // the writes were canonicalized, or by a client that is not this one) joined nothing, so the same
+    // agent appeared twice — once with its avatar, once as "unattributed" — and the dashboard's
+    // per-agent spend tile, which looks the row up by id, missed half the money.
+    //
+    // 🔑 BUT NOT WITH `LEFT JOIN agents a ON a.id=r.agent_id OR a.name=r.agent_id`. A string that is
+    // one agent's ID and another agent's NAME matches BOTH rows, and the join then emits that run
+    // TWICE: one $0.05 run came back as $0.05 under each of them while the company total said $0.05
+    // once. A ledger whose per-agent rows do not add up to its own total is a wrong number dressed
+    // as a measurement — worse than the missing attribution it was fixing. So: GROUP BY the stored
+    // string, which counts each run once whatever it was logged under, then fold the groups onto the
+    // canonical id through the same Agents.get every other reader here resolves with.
+    const byAgent = [];
+    const rowFor = new Map();
+    for (const r of all(`SELECT r.agent_id, COUNT(*) runs, COALESCE(SUM(r.input_tokens),0) input_tokens,
         COALESCE(SUM(r.output_tokens),0) output_tokens, COALESCE(SUM(r.cost_usd),0) cost_usd
-      FROM runs r LEFT JOIN agents a ON a.id=r.agent_id
-      GROUP BY r.agent_id ORDER BY cost_usd DESC`);
+      FROM runs r GROUP BY r.agent_id`)) {
+      const a = r.agent_id == null ? null : Agents.get(r.agent_id);
+      const key = a?.id ?? r.agent_id;   // an unattributed run keeps its own key (a raw string, or null)
+      let row = rowFor.get(key);
+      if (!row) {
+        row = { agent_id: key, name: a?.name ?? null, avatar: a?.avatar ?? null,
+          runs: 0, input_tokens: 0, output_tokens: 0, cost_usd: 0 };
+        rowFor.set(key, row); byAgent.push(row);
+      }
+      row.runs += r.runs; row.input_tokens += r.input_tokens;
+      row.output_tokens += r.output_tokens; row.cost_usd += r.cost_usd;
+    }
+    byAgent.sort((x, y) => y.cost_usd - x.cost_usd);
     // Tokens per model too, so the dashboard can show the rate that actually
     // matters — what a model costs you PER TOKEN — not just who spent the most.
     const byModel = all(`SELECT COALESCE(model,'unknown') model, COUNT(*) runs,
@@ -865,7 +1009,11 @@ export const Activity = {
     let sql = `SELECT * FROM activity`;
     const args = [];
     const where = [];
-    if (actor) { where.push(`actor = ?`); args.push(actor); }
+    if (actor) {
+      assertKnownWho(actor, 'they did nothing');
+      const w = matchWho('actor', actor);
+      where.push(w.sql); args.push(...w.args);
+    }
     if (type) { where.push(`type LIKE ?`); args.push(type + '.%'); }
     if (where.length) sql += ` WHERE ` + where.join(' AND ');
     sql += ` ORDER BY ts DESC, id DESC LIMIT ?`; args.push(limit);
@@ -902,7 +1050,14 @@ export const Graph = {
   build() {
     const memories = all(`SELECT * FROM memories ORDER BY updated_at DESC`).map((m) => parse(m, 'tags'));
     const agents = all(`SELECT * FROM agents`);
-    const agentById = Object.fromEntries(agents.map((a) => [a.id, a]));
+    // Keyed by BOTH spellings (and prototype-less, because an agent could be named "constructor"):
+    // a memory authored under a name found no agent here, so the graph silently dropped the
+    // "authored" edge the README sells — the author was simply not in the company's brain.
+    const agentById = Object.create(null);
+    for (const a of agents) agentById[a.id] = a;
+    // Names second and never over an id, so which agent a string means does not depend on the row
+    // order SQLite happened to hand back: an ID always wins, exactly as whoSpellings resolves it.
+    for (const a of agents) if (a.name && !(a.name in agentById)) agentById[a.name] = a;
 
     const nodes = [];
     const edges = [];

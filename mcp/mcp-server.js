@@ -97,7 +97,7 @@ const tools = [
     inputSchema: {
       type: 'object',
       properties: {
-        assignee: { type: 'string', description: 'Filter to tasks assigned to this agent id' },
+        assignee: { type: 'string', description: 'Filter to tasks assigned to this agent — id or name; both name the same agent and give the same answer' },
         status: { type: 'string', description: 'Filter by column name, e.g. "Todo", "In Progress", "Done"' },
         board_id: { type: 'string', description: 'Restrict to a specific board (defaults to all)' },
       },
@@ -145,7 +145,7 @@ const tools = [
       + 'median cycle time from created to done, created-vs-done per day, and the slowest tasks to finish.',
     inputSchema: { type: 'object', properties: {
       days: { type: 'number', description: 'Window in days (default 14)' },
-      agent: { type: 'string', description: 'Restrict to one agent — what they started, finished, and still hold' },
+      agent: { type: 'string', description: 'Restrict to one agent (id or name) — what they started, finished, and still hold' },
     } },
     run: (a) => hq('GET', `/api/flow?days=${a.days ?? 14}${a.agent ? `&actor=${encodeURIComponent(a.agent)}` : ''}`),
   },
@@ -190,7 +190,7 @@ const tools = [
       type: 'object',
       properties: {
         task_id: { type: 'string' },
-        agent: { type: 'string', description: 'Your agent id' },
+        agent: { type: 'string', description: 'Your agent id (your name works too — the board stores one identity either way)' },
         lease_ms: { type: 'integer', description: 'Lease duration in ms (default 600000 = 10 min)' },
       },
       required: ['task_id', 'agent'],
@@ -203,7 +203,7 @@ const tools = [
     inputSchema: {
       type: 'object',
       properties: {
-        agent: { type: 'string', description: 'Your agent id' },
+        agent: { type: 'string', description: 'Your agent id (your name works too — the board stores one identity either way)' },
         lease_ms: { type: 'integer' },
       },
       required: ['agent'],
@@ -226,7 +226,7 @@ const tools = [
     inputSchema: {
       type: 'object',
       properties: {
-        from_agent: { type: 'string', description: 'Your agent id' },
+        from_agent: { type: 'string', description: 'Your agent id (your name works too — the board stores one identity either way)' },
         to_agent: { type: 'string', description: 'Recipient agent id; omit to broadcast' },
         task_id: { type: 'string', description: 'Optional task this relates to' },
         body: { type: 'string' },
@@ -241,7 +241,7 @@ const tools = [
     inputSchema: {
       type: 'object',
       properties: {
-        agent: { type: 'string', description: 'Your agent id' },
+        agent: { type: 'string', description: 'Your agent id (your name works too — the board stores one identity either way)' },
         unread_only: { type: 'boolean' },
         mark_read: { type: 'boolean' },
         limit: { type: 'integer' },

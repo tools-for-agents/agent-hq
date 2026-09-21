@@ -90,10 +90,15 @@ const CANARIES = [
     into: '      slowest: [...cycles].sort((a, b) => a.hours - b.hours).slice(0, 5),',
   },
   {
+    // The anchor deliberately spans the UPDATE *and* its argument list. Deleting the expiry branch on
+    // its own leaves one `?` fewer than the bindings, and node:sqlite throws "column index out of
+    // range" — the suite would go red on the binding instead of on the rule, which proves nothing
+    // about leases. This anchor moves whenever claim()'s WHERE is rewritten: re-point it, and keep
+    // `lease_until IS NULL OR lease_until < ?` (with its trailing `ts`) as the thing it deletes.
     why: 'an expired lease must LET GO — otherwise one dead agent removes a task from the board forever',
     file: 'src/services.js',
-    find: "       WHERE id=? AND (assignee IS NULL OR assignee='' OR assignee=? OR lease_until IS NULL OR lease_until < ?)`,",
-    into: "       WHERE id=? AND (assignee IS NULL OR assignee='' OR assignee=?)`,",
+    find: "       WHERE id=? AND (assignee IS NULL OR assignee='' OR ${mine.sql} OR lease_until IS NULL OR lease_until < ?)`,\n      agent, ts, until, ts, id, ...mine.args, ts);",
+    into: "       WHERE id=? AND (assignee IS NULL OR assignee='' OR ${mine.sql})`,\n      agent, ts, until, ts, id, ...mine.args);",
   },
   {
     why: 'the ledger is how a company knows what it spent — a total that SUBTRACTS is a negative number dressed as a bill',

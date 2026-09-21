@@ -1268,3 +1268,200 @@ test('the budget is spent ACROSS rows — not handed out in full to each one', (
   assert.ok(inbox.length >= 4, 'all four messages come back');
   assert.ok(tokens <= 5000, `FOUR big rows share ONE budget — got ${Math.round(tokens)} tokens, not 4×`);
 });
+
+// 🔑 ONE IDENTITY, TWO SPELLINGS — the failure the guard on Tasks.list leaves open.
+//
+// `agent_register` hands back a record carrying BOTH an id and a name, `Agents.get` accepts either,
+// and every who-column stored whichever the caller happened to use. So an agent that claimed as
+// "Forge" was reported as holding NOTHING when asked for by its agent id — the exact phrasing
+// kanban_list_tasks advertises for "what am I assigned to?" — with no error and no warning, while
+// its lease blocked every other agent from the card. And the guard waved it through, because the
+// agent really IS registered: `[]` from a filter whose typo case throws a loud 400 reads as
+// authoritative, so a model reads it, believes it holds nothing, and pulls another task.
+//
+// Both directions, because a board mixes both spellings the moment two callers identify themselves
+// differently — which is the normal case, not the exotic one.
+test('one agent, one answer: a task claimed by NAME is found by ID, and one claimed by ID is found by NAME', async () => {
+  const { run, get } = await import('../src/db.js');
+  const bid = newBoard();
+  const forge = Agents.register({ name: 'Forge-who', role: 'builder', avatar: '🔨' });
+  const pixel = Agents.register({ name: 'Pixel-who', role: 'artist', avatar: '🎨' });
+
+  const t1 = Tasks.create({ board_id: bid, column: 'Todo', title: 'Ship the exporter', priority: 'urgent' });
+  const t2 = Tasks.create({ board_id: bid, column: 'Todo', title: 'Redraw the tab bar', priority: 'high' });
+
+  // Forge pulls work under its NAME (what a human, or a model reading the `name` it was handed back,
+  // passes); Pixel pulls under its ID (what the MCP schema documents). Both are legal inputs.
+  assert.equal(Tasks.next(forge.name, { board_id: bid }).task.id, t1.id, 'the urgent one goes first');
+  assert.equal(Tasks.claim(t2.id, pixel.id).ok, true);
+
+  // THE WRITE HALF: the board keeps ONE spelling of who — the canonical id.
+  assert.equal(get('SELECT assignee FROM tasks WHERE id=?', t1.id).assignee, forge.id,
+    'a claim by name is stored as the agent id, not the string the caller typed');
+
+  // THE READ HALF: either spelling asks the same question and must get the same answer.
+  for (const who of [forge.id, forge.name]) {
+    assert.deepEqual(Tasks.list({ board_id: bid, assignee: who }).map((t) => t.id), [t1.id],
+      `list({assignee:"${who}"}) finds what Forge holds`);
+  }
+  for (const who of [pixel.id, pixel.name]) {
+    assert.deepEqual(Tasks.list({ board_id: bid, assignee: who }).map((t) => t.id), [t2.id],
+      `list({assignee:"${who}"}) finds what Pixel holds — and Forge's card does not leak in`);
+  }
+
+  // The oversight layer inherits it: the dashboard's per-agent Flow tile always asks by ID
+  // (`/flow?actor=<id>`), and reported wip:0 for an agent holding an active lease — silent on the
+  // one board state the README says it exists to surface.
+  for (const who of [forge.id, forge.name]) assert.equal(Flow.summary({ actor: who }).wip, 1, `flow wip by "${who}"`);
+  for (const who of [pixel.id, pixel.name]) assert.equal(Flow.summary({ actor: who }).wip, 1, `flow wip by "${who}"`);
+  assert.ok(Activity.recent({ actor: forge.id }).some((a) => a.type === 'task.claimed' && a.entity_id === t1.id),
+    'and the claim is in the timeline the dashboard asks for by id');
+
+  // A BOARD THAT ALREADY RAN still holds name-spelled rows — canonicalizing new writes does not
+  // heal them, so the read side must match both spellings, not just the one it now writes.
+  run('UPDATE tasks SET assignee=? WHERE id=?', pixel.name, t2.id);
+  assert.deepEqual(Tasks.list({ board_id: bid, assignee: pixel.id }).map((t) => t.id), [t2.id],
+    'a row written under a name before this fix is still found by the id');
+  assert.equal(Flow.summary({ actor: pixel.id }).wip, 1, 'and still counted as work in flight');
+  assert.equal(Tasks.claim(t2.id, pixel.id).ok, true, 'and you are not blocked by your own legacy lease');
+  assert.equal(Tasks.release(t2.id, pixel.id).ok, true, 'and can release what you are holding');
+
+  // THE NEIGHBOURS, which must behave exactly as before:
+  // a misspelling is still a mistake, said out loud, with the real values in the sentence —
+  assert.throws(() => Tasks.list({ board_id: bid, assignee: 'Forge-wh' }),
+    (e) => {
+      assert.match(e.message, /no agent "Forge-wh" is registered/, 'it names the bad filter');
+      assert.match(e.message, /this is NOT "they have no tasks"/, 'and refuses to be read as an empty board');
+      return true;
+    });
+  assert.throws(() => Flow.summary({ actor: 'Forge-wh' }), /no agent "Forge-wh" is registered/,
+    'a typo is not an agent who did nothing — flow says so instead of returning zeros');
+  assert.throws(() => Activity.recent({ actor: 'Forge-wh' }), /no agent "Forge-wh" is registered/,
+    'nor an agent with an empty timeline');
+  // — and a worker that never registered still claims, still counts, still answers for itself.
+  const t3 = Tasks.create({ board_id: bid, column: 'Todo', title: 'unregistered work' });
+  assert.equal(Tasks.claim(t3.id, 'w1').ok, true, 'claiming does not require having registered');
+  assert.equal(Flow.summary({ actor: 'w1' }).wip, 1, 'and an unregistered actor with real rows is answered, not refused');
+  // — including one that holds work but has never appeared in the log: the guard has to look
+  // everywhere the answer comes from, or it refuses a question it could have answered.
+  const t4 = Tasks.create({ board_id: bid, column: 'Todo', title: 'handed to a stranger', assignee: 'ghost-runner' });
+  assert.equal(Flow.summary({ actor: 'ghost-runner' }).wip, 1, 'work assigned to a stranger is still work in flight');
+
+  // 🔑 AND THE TWO TOOLS MUST NOT CONTRADICT EACH OTHER ABOUT THE SAME BOARD. Registration is not
+  // what makes a holder real — holding the task is. When kanban_flow answered `wip:1` for 'w1' while
+  // kanban_list_tasks, the tool this whole failure is about, threw `no agent "w1" is registered`,
+  // one of those two sentences was a lie and a model had no way to tell which. One rule, every
+  // who-filter: if they hold work, EVERY reader answers for them.
+  for (const [who, held] of [['w1', [t3.id]], ['ghost-runner', [t4.id]]]) {
+    assert.deepEqual(Tasks.list({ board_id: bid, assignee: who }).map((t) => t.id), held,
+      `list({assignee:"${who}"}) answers the question flow already answered — it does not deny they exist`);
+    assert.equal(Flow.summary({ actor: who }).wip, held.length, `and flow agrees about "${who}"`);
+    assert.ok(Array.isArray(Activity.recent({ actor: who })), `and the timeline of "${who}" is a list, not an error`);
+  }
+  assert.deepEqual(Activity.recent({ actor: 'ghost-runner' }), [],
+    'a holder that has never been logged has an EMPTY timeline — which is the truth, not a refusal');
+
+  // A string that is nobody ANYWHERE is still a typo, and all three say so the same way.
+  for (const [tool, call] of [
+    ['kanban_list_tasks', () => Tasks.list({ board_id: bid, assignee: 'w17' })],
+    ['kanban_flow', () => Flow.summary({ actor: 'w17' })],
+    ['activity_feed', () => Activity.recent({ actor: 'w17' })],
+  ]) {
+    assert.throws(call, (e) => {
+      assert.match(e.message, /no agent "w17" is registered/, `${tool} names the bad filter`);
+      assert.match(e.message, /appears nowhere on this board/, `${tool} says what it actually checked`);
+      return true;
+    }, `${tool} refuses a who that holds nothing and has done nothing`);
+  }
+});
+
+// The same split ran through every other who-column — a memory's author, a run's agent — because the
+// fix was never a fix to ONE reader, it was a missing rule. A record has more than one body; a
+// company has more than one place it writes down who did something.
+//
+// 🔑 AND EVERY ASSERTION BELOW IS ABOUT A **LEGACY** ROW. Canonicalizing the writes makes the
+// name-spelled and the id-spelled write land identically, so a test that only writes through this
+// code cannot fail — it passes against the pre-fix reader too, and the read half it is supposed to
+// prove (the join, the dual-keyed graph, the IN-list) is guarded by nothing. Every live database
+// and every seeded board is full of rows written before the write half existed. So: write them, put
+// the NAME back in the column by hand, and ask by id.
+test('one agent, one answer: LEGACY name-spelled memories, runs and graph edges still answer to the id', async () => {
+  const { run } = await import('../src/db.js');
+  const sable = Agents.register({ name: 'Sable-who', role: 'researcher', avatar: '🪶' });
+
+  const named = Memory.write({ agent_id: sable.name, namespace: 'who-ns', title: 'Named memo', content: 'written under the name' });
+  Memory.write({ agent_id: sable.id, namespace: 'who-ns', title: 'Id memo', content: 'written under the id' });
+  // THE WRITE HALF: both spellings converge on the canonical id.
+  assert.equal(named.agent_id, sable.id, 'a memory written under the name is stored under the id');
+  // THE ROW A BOARD THAT ALREADY RAN IS FULL OF — restore it verbatim, because the read half exists
+  // for exactly this and for nothing else.
+  run('UPDATE memories SET agent_id=? WHERE id=?', sable.name, named.id);
+
+  for (const who of [sable.id, sable.name]) {
+    const mine = Memory.search({ agent_id: who, namespace: 'who-ns', limit: 50 }).map((m) => m.title).sort();
+    assert.deepEqual(mine, ['Id memo', 'Named memo'], `memory_search({agent_id:"${who}"}) sees the legacy row too`);
+  }
+
+  // The graph draws `agent → memory (authored)` by id; a name-authored memory had no author at all.
+  const edges = Graph.build().edges.filter((e) => e.source === 'agt:' + sable.id && e.type === 'authored');
+  assert.equal(edges.length, 2, 'both memories hang off ONE author node, including the legacy one');
+
+  // 🔑 AND NOBODY IS REFUSED THE SHARED POOL. `agent_id` here does not narrow the answer to "theirs"
+  // — it ADDS their rows to the org-wide memories, which belong to nobody. A guard on this filter
+  // told a worker that had not registered `no agent "w1" is registered…` and withheld the runbook
+  // it was entitled to: the same confident wrong answer as `[]`, pointing the other way.
+  Memory.write({ namespace: 'who-ns', title: 'Org-wide runbook', content: 'belongs to nobody, readable by everybody' });
+  assert.deepEqual(Memory.search({ agent_id: 'never-registered-worker', namespace: 'who-ns' }).map((m) => m.title),
+    ['Org-wide runbook'], 'an unregistered caller still gets the org-wide pool — it was never theirs to refuse');
+  assert.deepEqual(Memory.search({ agent_id: sable.id, namespace: 'who-ns', limit: 50 }).map((m) => m.title).sort(),
+    ['Id memo', 'Named memo', 'Org-wide runbook'], 'and a known agent gets the shared pool AND both of its own');
+
+  // The ledger: a run logged under the name joined nothing, so one agent appeared twice — once with
+  // an avatar, once as "unattributed" — and the dashboard's per-agent spend tile, which looks the
+  // row up by id, missed half the money.
+  const namedRun = Ledger.record({ agent_id: sable.name, label: 'named run', model: 'claude-haiku-4-5-20251001', input_tokens: 10, output_tokens: 10, cost_usd: 0.01 });
+  Ledger.record({ agent_id: sable.id, label: 'id run', model: 'claude-haiku-4-5-20251001', input_tokens: 10, output_tokens: 10, cost_usd: 0.02 });
+  run('UPDATE runs SET agent_id=? WHERE id=?', sable.name, namedRun.id);
+  const rows = Ledger.summary().by_agent.filter((r) => r.agent_id === sable.id || r.agent_id === sable.name || r.name === sable.name);
+  assert.equal(rows.length, 1, 'one agent is ONE row in the ledger, not one row and one "unattributed"');
+  assert.equal(rows[0].agent_id, sable.id, 'keyed by the agent id the dashboard looks it up with');
+  assert.equal(rows[0].runs, 2, 'and it carries both runs');
+  assert.equal(rows[0].name, sable.name, 'attributed, so the dashboard can find it by id');
+  assert.ok(Math.abs(rows[0].cost_usd - 0.03) < 1e-9, 'and the full spend, not half of it');
+});
+
+// ONE AMBIGUOUS LOOKUP MUST NOT BECOME TWO AGENTS. `Agents.get` resolves `id=? OR name=?`, so the
+// moment a query matches BOTH spellings of an identity, a name that happens to be somebody else's
+// id would pull that somebody else's rows into the answer — a confident wrong answer of exactly the
+// kind this whole change exists to remove, only now it hands you another agent's work as your own.
+// Nothing in the kit generates such a name, but agent_register accepts it, so the resolver must.
+test('an agent whose NAME is another agent\'s ID never sees that agent\'s work', () => {
+  const bid = newBoard();
+  const alpha = Agents.register({ name: 'Alpha-who', role: 'builder' });
+  const impostor = Agents.register({ name: alpha.id, role: 'builder' });   // legal: names are just strings
+
+  const ta = Tasks.create({ board_id: bid, column: 'Todo', title: 'alpha work' });
+  const ti = Tasks.create({ board_id: bid, column: 'Todo', title: 'impostor work' });
+  assert.equal(Tasks.claim(ta.id, alpha.id).ok, true);
+  assert.equal(Tasks.claim(ti.id, impostor.id).ok, true);
+
+  assert.deepEqual(Tasks.list({ board_id: bid, assignee: impostor.id }).map((t) => t.title), ['impostor work'],
+    'the impostor is told what the impostor holds — not Alpha\'s card as well');
+  assert.deepEqual(Tasks.list({ board_id: bid, assignee: alpha.id }).map((t) => t.title), ['alpha work'],
+    'and Alpha still sees its own');
+  assert.equal(Flow.summary({ actor: impostor.id }).wip, 1, 'flow counts one task, not two');
+
+  // AND THE BILL ADDS UP. `LEFT JOIN agents a ON a.id=r.agent_id OR a.name=r.agent_id` matches BOTH
+  // of these agents for one stored string, so a single run was emitted twice and charged twice —
+  // $0.05 of work billed as $0.10 across two rows while the company total still said $0.05. Whatever
+  // the ledger does about spelling, every run belongs to exactly one row.
+  Ledger.record({ agent_id: alpha.id, label: 'one run, one agent', input_tokens: 10, output_tokens: 10, cost_usd: 0.05 });
+  const led = Ledger.summary();
+  assert.equal(led.by_agent.reduce((n, r) => n + r.runs, 0), led.total_runs,
+    'the per-agent rows count every run exactly once — no run is billed to two agents');
+  // (1e-5, not 0: total_cost_usd is rounded to the nearest micro-dollar. A run billed twice is off
+  // by cents, so the tolerance still catches the thing this asserts.)
+  assert.ok(Math.abs(led.by_agent.reduce((n, r) => n + r.cost_usd, 0) - led.total_cost_usd) < 1e-5,
+    'and the per-agent spend adds up to the company spend');
+  assert.equal(led.by_agent.filter((r) => r.agent_id === alpha.id).length, 1, 'Alpha is one row');
+});
