@@ -199,21 +199,28 @@ A company of agents needs the same primitives a company of humans does: a place 
 
 ## The agent toolkit
 
+<!-- toolkit:start — generated from tools.json by tools-for-agents.github.io/build/toolkit-block.mjs; edit that, not this -->
+
 `agent-hq` is the **coordinate** leg of **[tools-for-agents](https://tools-for-agents.github.io)** — an operating system for agents.
-Seven zero-dependency, MCP-native tools that form one loop:
+Nine zero-dependency, MCP-native tools that form one loop, with a self at its centre:
 
 | | | |
 |---|---|---|
-| 🛰️ | **agent-hq** | **coordinate** — shared memory, a kanban agents claim work from, a registry, a cost ledger |
-| 🔎 | [lens](https://github.com/tools-for-agents/lens) | read code — token-budgeted retrieval — search, outlines, surgical reads |
-| ⚒ | [anvil](https://github.com/tools-for-agents/anvil) | run safely — a throwaway Docker sandbox: network off, capped, timed |
-| 🧠 | [cortex](https://github.com/tools-for-agents/cortex) | remember — an Obsidian-compatible second brain, wikilinked |
-| 🧭 | [scout](https://github.com/tools-for-agents/scout) | read the web — a URL becomes clean, cached, searchable markdown |
-| 🎯 | [recall](https://github.com/tools-for-agents/recall) | recall it all — one query across brain, team, reading and code |
-| 👁 | [iris](https://github.com/tools-for-agents/iris) | see — look at what you built, before you claim it works |
+| 🛰️ | **agent-hq** | **coordinate** — The company's work, made visible. |
+| 🔎 | [lens](https://github.com/tools-for-agents/lens) | read code — Read code without reading files. |
+| ⚒ | [anvil](https://github.com/tools-for-agents/anvil) | run safely — Run it before you claim it works. |
+| 🔐 | [keep](https://github.com/tools-for-agents/keep) | hold secrets — Use a secret without holding it. |
+| 🧠 | [cortex](https://github.com/tools-for-agents/cortex) | remember — A second brain that outlives the context window. |
+| 🧭 | [scout](https://github.com/tools-for-agents/scout) | read the web — The web, ~90% lighter. |
+| 🔻 | [prism](https://github.com/tools-for-agents/prism) | read data — Read data without reading the blob. |
+| ◎ | [recall](https://github.com/tools-for-agents/recall) | recall it all — One query. Every store you have. |
+| 👁 | [iris](https://github.com/tools-for-agents/iris) | see — Look at what you built. |
+| 👻 | [ghost](https://github.com/tools-for-agents/ghost) | *the self at the centre* — A self that persists across sessions. Not a tool: it is what the agent **is** while it calls these. |
 
 **Reading this as an agent?** [`/llms.txt`](https://tools-for-agents.github.io/llms.txt) is the map, and
-[`/tools.json`](https://tools-for-agents.github.io/tools.json) hands you all **70 MCP tools** — every name, every
+[`/tools.json`](https://tools-for-agents.github.io/tools.json) hands you all **79 MCP tools** — every name, every
 description, every install command — in **one fetch**, without cloning anything.
+
+<!-- toolkit:end -->
 
 MIT licensed.
