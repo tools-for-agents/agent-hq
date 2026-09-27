@@ -4,7 +4,7 @@
 # package.json's "mcpName" is the marker that proves we own the name in server.json.
 #
 # Auth: the registry uses GitHub OIDC, so there is no registry secret to store.
-# npm does need one: add NPM_TOKEN to the repo (or org) secrets.
+# npm: trusted publishing (OIDC) once it is enabled on npmjs.com; NPM_TOKEN is the fallback until then.
 #
 #   git tag v0.1.0 && git push origin v0.1.0
 name: publish
@@ -27,6 +27,12 @@ jobs:
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
+      # Trusted publishing: npm >= 11.5.1 trades this job's OIDC token (id-token: write, above) for a
+      # one-time publish credential — no long-lived token. Turn it on once per package on npmjs.com
+      # (Settings → Trusted publishing → GitHub Actions, org tools-for-agents, this repo, publish.yml);
+      # until then npm falls back to NPM_TOKEN below, so nothing breaks in between.
+      - name: npm that speaks trusted publishing (>= 11.5.1)
+        run: npm install -g npm@latest && npm --version
 
       - name: the name in package.json must match the one we claim in server.json
         run: |
